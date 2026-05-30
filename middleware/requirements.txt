@@ -1,0 +1,16 @@
+# Install the backend as an editable internal package. This provides the
+# top-level `app` package (and pulls in the backend's own dependencies), so the
+# middleware can `import app.*` without any sys.path manipulation.
+#
+# The path is relative to the directory pip is run from, so install from HERE:
+#     cd middleware && pip install -r requirements.txt
+-e ../backend
+
+fastapi
+uvicorn[standard]
+pydantic
+pydantic-settings
+email-validator
+python-jose[cryptography]
+passlib[bcrypt]
+python-multipart

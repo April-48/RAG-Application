@@ -1,0 +1,72 @@
+# Docker Compose for the RAG application.
+# Current stage: local development DATABASE only (Postgres + pgvector).
+# The middleware/frontend services are added in a later stage (see commented block).
+#
+# Postgres credentials are hardcoded below for stable local demo startup. Docker
+# Compose reads `.env` from this directory; an empty POSTGRES_PASSWORD= there
+# would override ${POSTGRES_PASSWORD:-password} and break first-time DB init.
+# App connection strings (DATABASE_URL) still come from the root `.env`.
+
+services:
+  db:
+    image: pgvector/pgvector:pg16
+    container_name: rag_app_db
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: password
+      POSTGRES_DB: rag_app
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+      # Scripts in this folder run automatically on first init (empty volume).
+      - ./infra/postgres/init:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d rag_app"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: rag_app_redis
+    # Cache layer for repeated RAG answers. Optional: the app runs fine without
+    # it (caching is skipped when Redis is unreachable).
+    ports:
+      - "6379:6379"
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  # --- Added in a later stage (not part of the database-only setup) ---
+  # middleware:
+  #   build: ./middleware
+  #   env_file: .env
+  #   depends_on:
+  #     db:
+  #       condition: service_healthy
+  #   ports:
+  #     - "8000:8000"
+  #   volumes:
+  #     - ./middleware:/app
+  #     - ./backend:/backend
+  #     - uploads:/data/uploads
+  #
+  # frontend:
+  #   build: ./frontend
+  #   env_file: .env
+  #   depends_on:
+  #     - middleware
+  #   ports:
+  #     - "5173:5173"
+  #   volumes:
+  #     - ./frontend:/app
+  #     - /app/node_modules
+
+volumes:
+  pgdata:
+  redisdata:

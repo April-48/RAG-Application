@@ -1,0 +1,14 @@
+sqlalchemy
+alembic
+psycopg[binary]
+pgvector
+redis
+pymupdf
+python-docx
+sentence-transformers
+openai
+pydantic
+pydantic-settings
+passlib[bcrypt]
+bcrypt==4.0.1
+python-jose[cryptography]

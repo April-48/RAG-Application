@@ -1,0 +1,21 @@
+[build-system]
+requires = ["setuptools>=61"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rag-backend"
+version = "0.1.0"
+description = "RAG document Q&A backend: DB models, repositories, services, and the RAG pipeline. Imported by the middleware as the top-level `app` package."
+requires-python = ">=3.10"
+# Runtime dependencies are kept in requirements.txt (single source of truth) and
+# read from there, so there is no duplicate dependency list to keep in sync.
+dynamic = ["dependencies"]
+
+[tool.setuptools.dynamic]
+dependencies = { file = ["requirements.txt"] }
+
+# The importable package is `app` (and its subpackages). The `alembic/` and
+# runtime `storage/` directories are intentionally not packaged.
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["app*"]
