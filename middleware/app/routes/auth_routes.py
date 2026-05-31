@@ -35,7 +35,7 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> User:
     except EmailAlreadyExistsError as exc:
         raise HTTPException(
             status_code=status.HTTP_409_CONFLICT,
-            detail="Email is already registered",
+            detail="An account with this email already exists. Try logging in instead.",
         ) from exc
 
 

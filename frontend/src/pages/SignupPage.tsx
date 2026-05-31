@@ -5,8 +5,8 @@
 import { useState } from "react";
 import { Link, Navigate, useNavigate } from "react-router-dom";
 
-import { ApiError } from "../api/client";
 import { useAuth } from "../context/AuthContext";
+import { mapSignupError, validateSignupForm } from "../utils/signupValidation";
 
 /** Sign-up form that creates an account and logs you in. */
 export default function SignupPage() {
@@ -19,20 +19,21 @@ export default function SignupPage() {
 
   if (isAuthenticated) return <Navigate to="/dashboard" replace />;
 
-  /** Validate password length, sign up, then redirect to dashboard. */
+  /** Validate locally, sign up, then redirect to dashboard. */
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (password.length < 8) {
-      setError("Password must be at least 8 characters.");
+    const validationError = validateSignupForm(email, password);
+    if (validationError) {
+      setError(validationError);
       return;
     }
     setBusy(true);
     setError(null);
     try {
-      await signup(email, password);
+      await signup(email.trim(), password);
       navigate("/dashboard");
     } catch (err) {
-      setError(err instanceof ApiError ? err.message : "Sign up failed");
+      setError(mapSignupError(err));
     } finally {
       setBusy(false);
     }
@@ -56,6 +57,7 @@ export default function SignupPage() {
           <input
             id="email"
             type="email"
+            autoComplete="email"
             required
             value={email}
             onChange={(e) => setEmail(e.target.value)}
@@ -70,16 +72,20 @@ export default function SignupPage() {
           <input
             id="password"
             type="password"
+            autoComplete="new-password"
             required
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             className="glass-input"
           />
-          <p className="mt-1.5 text-xs text-slate-400">At least 8 characters.</p>
+          <p className="mt-1.5 text-xs text-slate-400">8–128 characters.</p>
         </div>
 
         {error && (
-          <p className="rounded-xl border border-red-200/80 bg-red-50/80 px-3 py-2 text-sm text-red-700 backdrop-blur-sm">
+          <p
+            role="alert"
+            className="rounded-xl border border-red-200/80 bg-red-50/80 px-3 py-2 text-sm text-red-700 backdrop-blur-sm"
+          >
             {error}
           </p>
         )}

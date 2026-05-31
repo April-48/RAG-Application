@@ -194,7 +194,11 @@ class ChatService:
         output = self.pipeline.generate(
             question, result, document_id=document_id
         )
-        if not output.prompt_chunks:
+
+        if output.answer_path == "direct_extraction":
+            answer = output.answer
+            sources = _sources_from_chunks(result.chunks)
+        elif not output.prompt_chunks:
             logger.info(
                 "Answer path=insufficient_guard document_id=%s route=%s reason=no_prompt_chunks "
                 "raw_chunks=%s prompt_chunks=0 display_sources=0",

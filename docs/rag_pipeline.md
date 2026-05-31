@@ -77,6 +77,8 @@ Only chunks that survive this step are inserted into the prompt **and** shown as
 
 ## Generation
 
+The chat stage calls whatever model `LLM_MODEL` points to (see [Environment variables](#environment-variables)). Code defaults to **`gpt-5-mini`**. Nothing in the generation pipeline hard-codes a model name — swap models in `.env` only.
+
 ### Prompt construction
 
 Retrieved `chunk_text` is inserted into the user message under `Document context:` with source metadata (chunk index, id, page).
@@ -134,7 +136,7 @@ RETRIEVAL_TOP_K=8
 RETRIEVAL_MIN_SIMILARITY=0.20
 RETRIEVAL_ENFORCE_SIMILARITY_THRESHOLD=false
 
-LLM_MODEL=gpt-4o-mini
+LLM_MODEL=gpt-5-mini
 OPENAI_API_KEY=...
 
 ENABLE_REDIS_CACHE=false
@@ -144,6 +146,8 @@ CHAT_RATE_LIMIT_PER_MINUTE=10
 ```
 
 Code defaults above match `config.py`. `.env.example` sets `ENABLE_REDIS_CACHE=true` and `ENABLE_RATE_LIMIT=true` for local demos.
+
+**Model choice:** default is `gpt-5-mini`. See README [Model Choice](../README.md#model-choice) for alternatives (`gpt-5.4-mini`, `gpt-4.1-mini`, `gpt-4o-mini`).
 
 ## Logging
 

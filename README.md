@@ -4,6 +4,24 @@ This is my RAG homework project. Users upload PDF/TXT/DOCX, pick one file, ask q
 
 It runs locally with Docker Compose. It is an MVP, not a production app — but I kept frontend, API, and backend in separate folders so the architecture is easy to walk through.
 
+## Screenshots
+
+**Home** — landing page and how the app works.
+
+![Home page](docs/screenshots/home.png)
+
+**Log in** — JWT auth before upload and chat.
+
+![Login page](docs/screenshots/login.png)
+
+**Dashboard** — upload PDF/TXT/DOCX, track ingestion status, open or chat with a ready document.
+
+![Dashboard](docs/screenshots/dashboard.png)
+
+**Chat** — three-column layout: document picker, chat area, and a sources panel showing retrieved chunks.
+
+![Chat](docs/screenshots/chat.png)
+
 ## Features
 
 - Sign up and log in with JWT
@@ -30,7 +48,7 @@ It runs locally with Docker Compose. It is an MVP, not a production app — but 
 | Cache | Redis (optional answer cache + chat rate limit) |
 | Migrations | Alembic |
 | Storage | Local disk for MVP; S3-style backend planned |
-| LLM / embeddings | OpenAI-compatible chat; local MiniLM or OpenAI embeddings via env config |
+| LLM / embeddings | OpenAI-compatible chat (default **`gpt-5-mini`** via `LLM_MODEL`); local MiniLM or OpenAI embeddings via env config |
 
 ## Architecture Overview
 
@@ -96,6 +114,33 @@ Set `OPENAI_API_KEY` (or `LLM_BASE_URL`) before testing chat.
 
 **Health check:** `GET http://localhost:8000/health` → `{"status":"ok"}`
 
+## Model Choice
+
+The default chat model is set with `LLM_MODEL` in `.env`.
+
+I use `gpt-5-mini` as the default. It is OpenAI's compact GPT-5 model —
+better instruction following and reasoning than the GPT-4.1 generation,
+without the cost of a full-size model. For a RAG app where the prompt
+already contains the retrieved context, a strong instruction-following
+model matters more than raw size.
+
+The model is kept configurable so you can swap it without touching the code.
+
+```env
+LLM_MODEL=gpt-5-mini        # default — good balance of quality and cost
+
+# Higher capability:
+# LLM_MODEL=gpt-5.4-mini    # faster, stronger reasoning, higher cost
+
+# Lower cost:
+# LLM_MODEL=gpt-4.1-mini
+# LLM_MODEL=gpt-4o-mini     # older fallback, widely supported
+```
+
+This project is focused on the RAG pipeline — ingestion, chunking, hybrid
+retrieval, source grounding, and streaming — not on squeezing the most out
+of the LLM. So the model stays swappable rather than hard-coded.
+
 ## Demo Flow
 
 **Checklist:** [Demo Checklist](docs/engineering-notes/demo-checklist.md)
@@ -138,7 +183,7 @@ Layer notes: [frontend](frontend/README.md) · [API layer](middleware/README.md)
 
 ## Testing
 
-**Backend** — **57 pytest tests** (auth, document ownership, hybrid retrieval/query router, Redis cache keys, clear-history routes, mocked chat):
+**Backend** — **77 pytest tests** (auth, document ownership, upload validation, hybrid retrieval/query router, Redis cache keys, clear-history routes, mocked chat):
 
 ```bash
 cd backend

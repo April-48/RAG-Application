@@ -7,7 +7,7 @@ React + Vite + TypeScript + Tailwind. UI only — all data comes from the API.
 ```
 src/
 ├── api/         HTTP client
-├── hooks/       useAuth, useDocuments, useChat
+├── hooks/       useDocuments, useChat (+ useAuth from context/AuthContext)
 ├── components/  Upload, Chat, Sources, ConfirmDialog, etc.
 ├── pages/       Login, Dashboard, Chat
 └── App.tsx      routing

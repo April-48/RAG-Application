@@ -30,7 +30,8 @@ You can also open the live OpenAPI docs at `http://localhost:8000/docs`.
 ```
 
 - Password must be 8–128 characters.
-- Returns `409` if the email is already registered.
+- Returns `409` with `"An account with this email already exists. Try logging in instead."` if the email is already registered.
+- Returns `422` for invalid email format or password length (Pydantic validation).
 
 **POST `/auth/login`**
 
@@ -72,7 +73,7 @@ Upload validation: extension whitelist, size limit (`MAX_UPLOAD_SIZE_MB`, defaul
 | Content does not match extension | **400** |
 | File too large | **413** |
 
-Files are stored on disk as `{document_id}{extension}`; the sanitized original basename is kept in `filename` for download/display.
+Files are stored on disk at `{UPLOAD_DIR}/{user_id}/{document_id}/{document_id}{extension}` (e.g. `backend/storage/uploads/.../abc.pdf`). The sanitized original basename is kept in `filename` for download/display.
 
 Allowed file types: `.pdf`, `.txt`, `.docx`.
 
@@ -119,7 +120,7 @@ Chat is scoped to one document at a time. Every route takes a `{document_id}`. T
 **POST `/chat/{document_id}/ask`**
 
 ```json
-// request
+// request — question: 1–4000 characters
 { "question": "What is the refund policy?" }
 // response 200
 {
@@ -138,7 +139,12 @@ Chat is scoped to one document at a time. Every route takes a `{document_id}`. T
 - `409` — document is not `ready` yet
 - `502` — LLM call failed (when the pipeline reaches the LLM and it errors)
 
-**Sources** come from the retrieval pipeline — not from the LLM reply. Each source has `chunk_index`, optional `page_number`, and `chunk_text`.
+**Sources** match what the client should cite:
+
+- **LLM path** — same chunks passed to the prompt after `prepare_llm_chunks()` (not the raw retrieval list).
+- **`skip_llm` / `direct_extraction`** — chunks from retrieval (positional or page/section lookup).
+
+Each source has `chunk_index`, optional `page_number`, and `chunk_text`. Sources are not parsed from the LLM reply text.
 
 **POST `/chat/{document_id}/ask/stream`**
 

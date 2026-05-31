@@ -80,6 +80,56 @@ def test_ask_on_non_ready_document_raises(db_session) -> None:
         )
 
 
+def test_ask_returns_direct_extraction_without_llm_prompt_chunks(db_session) -> None:
+    user_id = uuid.uuid4()
+    document = _ready_document(user_id)
+    chunk = _sample_chunk(document.id)
+    chunk.chunk_text = "Hello world. This is the first sentence."
+
+    documents = MagicMock()
+    documents.get_accessible_document.return_value = document
+
+    session_id = uuid.uuid4()
+    chats = MagicMock()
+    chats.get_or_create_session.return_value = MagicMock(id=session_id)
+
+    pipeline = MagicMock()
+    pipeline.retrieve.return_value = RetrievalResult(
+        chunks=[chunk],
+        routed=RoutedQuery(
+            mode=QueryMode.DOCUMENT_BEGINNING,
+            positional_style=None,
+        ),
+    )
+    pipeline.generate.return_value = GenerationOutput(
+        answer="Hello world.",
+        prompt_chunks=[],
+        answer_path="direct_extraction",
+        raw_retrieved_count=1,
+        prompt_chunk_count=0,
+        context_chars=0,
+    )
+
+    service = ChatService(
+        db_session,
+        documents=documents,
+        chats=chats,
+        cache=AnswerCache(client=None),
+        pipeline=pipeline,
+    )
+
+    answer, sources = service.ask(
+        user_id=user_id,
+        document_id=document.id,
+        question="What is the first sentence of the document?",
+    )
+
+    assert answer == "Hello world."
+    assert len(sources) == 1
+    assert sources[0]["chunk_index"] == 0
+    pipeline.generate.assert_called_once()
+
+
 def test_ask_returns_mocked_answer_and_sources(db_session) -> None:
     user_id = uuid.uuid4()
     document = _ready_document(user_id)

@@ -142,7 +142,7 @@ Before the LLM, `query_router` picks a mode. This is simple rule-based routing p
 
 **Prompt:** answers must stay grounded in retrieved context, but the model may **synthesize across snippets** and give **partial answers with uncertainty**. The fixed insufficient-context line is only for when context has **no** relevant information.
 
-Sources shown in the UI come from **retrieved chunks**, not from parsing the LLM output.
+Sources shown in the UI match the **citation list returned by the API**: prompt-filtered chunks for LLM answers; retrieval chunks for `skip_llm` and `direct_extraction` paths. They are not parsed from free-form LLM output.
 
 ## Redis
 
@@ -184,6 +184,8 @@ The most important next steps are reliability and scalability, not new features.
 **Vector search at scale.** pgvector inside Postgres is enough for my demo documents. If users uploaded much larger corpora, I would add pgvector indexes (IVFFlat/HNSW) or, at very large scale, move vectors to a dedicated store while keeping document metadata in Postgres.
 
 **Cloud deploy (e.g. Supabase).** I did not deploy this MVP to the cloud, but the stack maps cleanly to managed services. Postgres + pgvector could move to **Supabase** (or RDS) — I would point `DATABASE_URL` at the hosted instance and run `alembic upgrade head`; the ORM and pgvector queries stay the same. Uploads would leave local disk for **Supabase Storage** or **S3** via a new `StorageBackend` class. Redis cache and rate limits could use **Upstash Redis** or any managed Redis. The FastAPI app could run on **Railway**, **Render**, or **Fly.io** as one or more containers behind their load balancer, with the React frontend on a static host or CDN. I would **not** switch to MongoDB — users, chunks, vectors, and chat history all live in Postgres today; moving to MongoDB would mean rewriting repositories and retrieval, not a config change.
+
+A model selector in the UI would allow users to switch LLM models at runtime without changing environment variables — useful once multiple models are available at different price and quality points.
 
 Things like multi-document chat, OCR, or shared folders are useful product ideas, but they are separate from this core scaling path.
 

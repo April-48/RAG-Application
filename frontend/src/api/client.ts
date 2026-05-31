@@ -43,6 +43,18 @@ export async function apiRequest<T>(
   path: string,
   options: RequestOptions = {},
 ): Promise<T> {
+  try {
+    return await apiRequestInner<T>(path, options);
+  } catch (err) {
+    if (err instanceof ApiError) throw err;
+    throw new ApiError("Something went wrong. Please try again in a moment.", 0);
+  }
+}
+
+async function apiRequestInner<T>(
+  path: string,
+  options: RequestOptions = {},
+): Promise<T> {
   const { auth = true, headers, body, ...rest } = options;
   const finalHeaders: Record<string, string> = {
     ...(headers as Record<string, string> | undefined),
@@ -132,7 +144,10 @@ export function uploadWithProgress<T>(
       }
     };
 
-    xhr.onerror = () => reject(new ApiError("Network error", 0));
+    xhr.onerror = () =>
+      reject(
+        new ApiError("Something went wrong. Please try again in a moment.", 0),
+      );
     xhr.send(formData);
   });
 }

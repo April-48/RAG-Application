@@ -48,6 +48,20 @@ All three live in one repo. The API imports the backend directly in one process 
 
 ---
 
+## Future product improvements
+
+- **Model selector in the UI** — right now the LLM model is set in `.env`.
+  A future improvement would let users pick the model from the frontend
+  (e.g. a dropdown in settings), so non-technical users can switch without
+  touching config files.
+- **Faster ingestion** — move embedding generation to a background worker
+  queue (Celery + Redis) so multiple documents can be processed in parallel
+  and large files do not slow down the API. The upload flow already hands
+  off to `ingest_document()`, so the change is mostly infrastructure, not
+  logic.
+
+---
+
 ## If I scaled this later
 
 The MVP runs on one machine, but I split the main parts so they can scale on their own.

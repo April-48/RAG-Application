@@ -37,9 +37,10 @@ class Settings(BaseSettings):
     embedding_dim: int = 384
 
     # --- Chat LLM — OpenAI by default; any OpenAI-compatible URL works too ---
+    # Default gpt-5-mini for document-grounded RAG; override via LLM_MODEL in .env.
     openai_api_key: str = ""
     llm_provider: str = "openai"  # "openai" | "openai-compatible"
-    llm_model: str = "gpt-4o-mini"
+    llm_model: str = "gpt-5-mini"
     llm_base_url: str = ""
     # How many chunks we pull from pgvector per question.
     retrieval_top_k: int = 8

@@ -22,7 +22,7 @@ Two toggles (`true` in `.env.example`; code defaults `false` without `.env`):
 
 **2. Rate limit** (`ENABLE_RATE_LIMIT`) — `ChatRateLimiter` in middleware on **ask** routes only (`/ask`, `/ask/stream`)
 
-- Key: `rate:user:{user_id}:chat:{minute}`  
+- Key: `rate:user:{user_id}:chat:{yyyyMMddHHmm}` (one counter per user per calendar minute)
 - `INCR` + `EXPIRE 60`, cap 10/min, HTTP 429  
 
 Both fail-open via `redis_client.py`.

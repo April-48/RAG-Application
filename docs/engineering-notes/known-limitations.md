@@ -18,6 +18,23 @@ While the assistant is answering, the send button and message input are disabled
 
 Chat is tied to one selected file. No “search all my uploads.”
 
+## Upload and ingestion speed
+
+Uploading large files can feel slow. There are two reasons:
+
+1. **File upload** — the file goes to the local API server, which writes it
+   to disk before responding. On a laptop this is fast, but network latency
+   adds up for larger files.
+
+2. **Ingestion** — after upload, the app parses the file, splits it into
+   chunks, and runs each chunk through the embedding model. This all happens
+   in the same API process via BackgroundTasks. Large PDFs with many pages
+   take longer.
+
+The UI polls every 5 seconds and shows the current status
+(`uploaded` → `processing` → `ready`), so you can see progress.
+For the demo, text-based PDFs under ~20 pages process fastest.
+
 ## BackgroundTasks ≠ job queue
 
 Ingestion runs inside the API process. If the server restarts mid-ingest, the document stays stuck on `processing` forever.
