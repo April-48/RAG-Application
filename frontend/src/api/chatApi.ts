@@ -10,7 +10,14 @@ import { API_BASE_URL, ApiError, apiRequest, tokenStorage } from "./client";
 
 export interface StreamHandlers {
   onToken: (token: string) => void;
-  onSources: (sources: Source[]) => void;
+  onSources: (
+    sources: Source[],
+    meta?: {
+      retrieval_mode?: string | null;
+      retrieval_page?: number | null;
+      retrieval_section?: string | null;
+    },
+  ) => void;
   onError?: (message: string) => void;
 }
 
@@ -69,10 +76,20 @@ export const chatApi = {
       if (!line) return;
       const json = line.slice(5).trim();
       if (!json) return;
-      const event = JSON.parse(json) as { type: string; data?: unknown };
+      const event = JSON.parse(json) as {
+        type: string;
+        data?: unknown;
+        retrieval_mode?: string | null;
+        retrieval_page?: number | null;
+        retrieval_section?: string | null;
+      };
       if (event.type === "token") handlers.onToken(String(event.data ?? ""));
       else if (event.type === "sources")
-        handlers.onSources((event.data as Source[]) ?? []);
+        handlers.onSources((event.data as Source[]) ?? [], {
+          retrieval_mode: event.retrieval_mode,
+          retrieval_page: event.retrieval_page,
+          retrieval_section: event.retrieval_section,
+        });
       else if (event.type === "error")
         handlers.onError?.(String(event.data ?? "Stream error"));
     };

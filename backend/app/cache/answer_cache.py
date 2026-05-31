@@ -101,12 +101,20 @@ class AnswerCache:
         question: str,
         answer: str,
         sources: list[dict[str, Any]],
+        retrieval_mode: str | None = None,
+        retrieval_page: int | None = None,
+        retrieval_section: str | None = None,
     ) -> None:
         if self._client is None:
             return
         key = build_cache_key(user_id, document_id, question)
         try:
-            value = json.dumps({"answer": answer, "sources": sources})
+            payload: dict[str, Any] = {"answer": answer, "sources": sources}
+            if retrieval_mode:
+                payload["retrieval_mode"] = retrieval_mode
+                payload["retrieval_page"] = retrieval_page
+                payload["retrieval_section"] = retrieval_section
+            value = json.dumps(payload)
             self._client.set(key, value, ex=self._ttl)
             logger.info("Redis cache set for %s (ttl=%ss)", key, self._ttl)
         except Exception as exc:

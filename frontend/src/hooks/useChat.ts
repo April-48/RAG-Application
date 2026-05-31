@@ -71,6 +71,9 @@ export function useChat(documentId: string, options: UseChatOptions = {}): UseCh
               role: r.role as "user" | "assistant",
               content: r.content,
               sources: r.sources,
+              retrieval_mode: r.retrieval_mode,
+              retrieval_page: r.retrieval_page,
+              retrieval_section: r.retrieval_section,
             })),
         );
       })
@@ -149,8 +152,14 @@ export function useChat(documentId: string, options: UseChatOptions = {}): UseCh
                 ...m,
                 content: m.content + token,
               })),
-            onSources: (sources: Source[]) =>
-              updateLastAssistant((m) => ({ ...m, sources })),
+            onSources: (sources: Source[], meta) =>
+              updateLastAssistant((m) => ({
+                ...m,
+                sources,
+                retrieval_mode: meta?.retrieval_mode,
+                retrieval_page: meta?.retrieval_page,
+                retrieval_section: meta?.retrieval_section,
+              })),
             onError: (message) => setError(message),
           },
           controller.signal,
@@ -179,6 +188,9 @@ export function useChat(documentId: string, options: UseChatOptions = {}): UseCh
             role: "assistant",
             content: result.answer,
             sources: result.sources,
+            retrieval_mode: result.retrieval_mode,
+            retrieval_page: result.retrieval_page,
+            retrieval_section: result.retrieval_section,
             streaming: false,
           }));
         } catch (fallbackErr) {

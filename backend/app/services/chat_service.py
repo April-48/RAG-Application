@@ -24,11 +24,13 @@ from app.rag.llm_service import LLM
 from app.rag.generation import StreamGenerationState
 from app.rag.pipeline import GenerationOutput, RAGPipeline
 from app.rag.prompt_builder import INSUFFICIENT_CONTEXT_MESSAGE, is_insufficient_context_answer
+from app.rag.query_router import retrieval_mode_info
 from app.repositories.chat_repository import ChatRepository
 from app.services.document_service import DocumentService
 
 # Shape of one cited chunk in sources_json and Redis cache.
 Source = dict[str, Any]
+RetrievalModeInfo = dict[str, str | int | None]
 
 logger = logging.getLogger("app.services.chat_service")
 
@@ -61,6 +63,53 @@ def _chunk_to_source(chunk: DocumentChunk) -> Source:
 def _sources_from_chunks(chunks: list[DocumentChunk]) -> list[Source]:
     """Map a list of chunks to the sources_json format stored on assistant messages."""
     return [_chunk_to_source(chunk) for chunk in chunks]
+
+
+def _pack_sources_storage(
+    sources: list[Source], mode_info: RetrievalModeInfo | None
+) -> Any:
+    """Persist sources plus optional retrieval metadata in messages.sources_json."""
+    if not mode_info or not mode_info.get("retrieval_mode"):
+        return sources
+    return {**mode_info, "sources": sources}
+
+
+def unpack_sources_storage(data: Any) -> tuple[list[Source], RetrievalModeInfo | None]:
+    """Read sources and retrieval metadata from messages.sources_json (list or wrapped dict)."""
+    if isinstance(data, dict) and "sources" in data:
+        raw_sources = data.get("sources") or []
+        sources = raw_sources if isinstance(raw_sources, list) else []
+        mode = data.get("retrieval_mode")
+        if not mode:
+            return sources, None
+        return sources, {
+            "retrieval_mode": mode,
+            "retrieval_page": data.get("retrieval_page"),
+            "retrieval_section": data.get("retrieval_section"),
+        }
+    if isinstance(data, list):
+        return data, None
+    return [], None
+
+
+def _mode_info_from_cache(cached: dict[str, Any]) -> RetrievalModeInfo | None:
+    mode = cached.get("retrieval_mode")
+    if not mode:
+        return None
+    return {
+        "retrieval_mode": mode,
+        "retrieval_page": cached.get("retrieval_page"),
+        "retrieval_section": cached.get("retrieval_section"),
+    }
+
+
+def _sources_event(
+    sources: list[Source], mode_info: RetrievalModeInfo | None
+) -> dict[str, Any]:
+    event: dict[str, Any] = {"type": "sources", "data": sources}
+    if mode_info:
+        event.update(mode_info)
+    return event
 
 
 def _log_answer_summary(
@@ -132,7 +181,7 @@ class ChatService:
     # I check Redis before retrieval and LLM to save tokens on repeats.
     def ask(
         self, *, user_id: uuid.UUID, document_id: uuid.UUID, question: str
-    ) -> tuple[str, list[Source]]:
+    ) -> tuple[str, list[Source], RetrievalModeInfo | None]:
         session_id = self._begin(
             user_id=user_id, document_id=document_id, question=question
         )
@@ -144,6 +193,7 @@ class ChatService:
         if cached is not None:
             answer = cached["answer"]
             sources = cached.get("sources", [])
+            mode_info = _mode_info_from_cache(cached)
             logger.info(
                 "Answer path=cache document_id=%s question=%r sources=%s",
                 document_id,
@@ -154,11 +204,12 @@ class ChatService:
                 session_id=session_id,
                 role="assistant",
                 content=answer,
-                sources_json=sources,
+                sources_json=_pack_sources_storage(sources, mode_info),
             )
-            return answer, sources
+            return answer, sources, mode_info
 
         result = self.pipeline.retrieve(document_id, question)
+        mode_info = retrieval_mode_info(result.routed)
         if result.skip_llm_message:
             skip_sources = _sources_from_chunks(result.chunks)
             logger.info(
@@ -172,9 +223,9 @@ class ChatService:
                 session_id=session_id,
                 role="assistant",
                 content=result.skip_llm_message,
-                sources_json=skip_sources,
+                sources_json=_pack_sources_storage(skip_sources, mode_info),
             )
-            return result.skip_llm_message, skip_sources
+            return result.skip_llm_message, skip_sources, mode_info
 
         if not result.chunks:
             logger.info(
@@ -187,9 +238,9 @@ class ChatService:
                 session_id=session_id,
                 role="assistant",
                 content=INSUFFICIENT_CONTEXT_MESSAGE,
-                sources_json=[],
+                sources_json=_pack_sources_storage([], mode_info),
             )
-            return INSUFFICIENT_CONTEXT_MESSAGE, []
+            return INSUFFICIENT_CONTEXT_MESSAGE, [], mode_info
 
         output = self.pipeline.generate(
             question, result, document_id=document_id
@@ -210,9 +261,9 @@ class ChatService:
                 session_id=session_id,
                 role="assistant",
                 content=INSUFFICIENT_CONTEXT_MESSAGE,
-                sources_json=[],
+                sources_json=_pack_sources_storage([], mode_info),
             )
-            return INSUFFICIENT_CONTEXT_MESSAGE, []
+            return INSUFFICIENT_CONTEXT_MESSAGE, [], mode_info
 
         answer = output.answer
         if not answer.strip():
@@ -243,7 +294,7 @@ class ChatService:
             session_id=session_id,
             role="assistant",
             content=answer,
-            sources_json=sources,
+            sources_json=_pack_sources_storage(sources, mode_info),
         )
         if not is_insufficient_context_answer(answer):
             self.cache.set(
@@ -252,6 +303,11 @@ class ChatService:
                 question=question,
                 answer=answer,
                 sources=sources,
+                retrieval_mode=mode_info.get("retrieval_mode") if mode_info else None,
+                retrieval_page=mode_info.get("retrieval_page") if mode_info else None,
+                retrieval_section=(
+                    mode_info.get("retrieval_section") if mode_info else None
+                ),
             )
         elif sources:
             logger.warning(
@@ -260,7 +316,7 @@ class ChatService:
                 document_id,
                 question[:120],
             )
-        return answer, sources
+        return answer, sources, mode_info
 
     # Stream SSE-style events: token chunks, then sources, then done.
     def ask_stream(
@@ -280,6 +336,7 @@ class ChatService:
             if cached is not None:
                 answer = cached["answer"]
                 sources = cached.get("sources", [])
+                mode_info = _mode_info_from_cache(cached)
                 logger.info(
                     "Answer path=cache document_id=%s question=%r sources=%s",
                     document_id,
@@ -290,14 +347,15 @@ class ChatService:
                     session_id=session_id,
                     role="assistant",
                     content=answer,
-                    sources_json=sources,
+                    sources_json=_pack_sources_storage(sources, mode_info),
                 )
                 yield {"type": "token", "data": answer}
-                yield {"type": "sources", "data": sources}
+                yield _sources_event(sources, mode_info)
                 yield {"type": "done"}
                 return
 
             result = self.pipeline.retrieve(document_id, question)
+            mode_info = retrieval_mode_info(result.routed)
             if result.skip_llm_message:
                 skip_sources = _sources_from_chunks(result.chunks)
                 logger.info(
@@ -311,10 +369,10 @@ class ChatService:
                     session_id=session_id,
                     role="assistant",
                     content=result.skip_llm_message,
-                    sources_json=skip_sources,
+                    sources_json=_pack_sources_storage(skip_sources, mode_info),
                 )
                 yield {"type": "token", "data": result.skip_llm_message}
-                yield {"type": "sources", "data": skip_sources}
+                yield _sources_event(skip_sources, mode_info)
                 yield {"type": "done"}
                 return
 
@@ -329,10 +387,10 @@ class ChatService:
                     session_id=session_id,
                     role="assistant",
                     content=INSUFFICIENT_CONTEXT_MESSAGE,
-                    sources_json=[],
+                    sources_json=_pack_sources_storage([], mode_info),
                 )
                 yield {"type": "token", "data": INSUFFICIENT_CONTEXT_MESSAGE}
-                yield {"type": "sources", "data": []}
+                yield _sources_event([], mode_info)
                 yield {"type": "done"}
                 return
 
@@ -349,10 +407,10 @@ class ChatService:
                     session_id=session_id,
                     role="assistant",
                     content=INSUFFICIENT_CONTEXT_MESSAGE,
-                    sources_json=[],
+                    sources_json=_pack_sources_storage([], mode_info),
                 )
                 yield {"type": "token", "data": INSUFFICIENT_CONTEXT_MESSAGE}
-                yield {"type": "sources", "data": []}
+                yield _sources_event([], mode_info)
                 yield {"type": "done"}
                 return
 
@@ -396,7 +454,7 @@ class ChatService:
                 session_id=session_id,
                 role="assistant",
                 content=answer,
-                sources_json=sources,
+                sources_json=_pack_sources_storage(sources, mode_info),
             )
             if not is_insufficient_context_answer(answer):
                 self.cache.set(
@@ -405,6 +463,9 @@ class ChatService:
                     question=question,
                     answer=answer,
                     sources=sources,
+                    retrieval_mode=mode_info.get("retrieval_mode"),
+                    retrieval_page=mode_info.get("retrieval_page"),
+                    retrieval_section=mode_info.get("retrieval_section"),
                 )
             elif sources:
                 logger.warning(
@@ -413,7 +474,7 @@ class ChatService:
                     document_id,
                     question[:120],
                 )
-            yield {"type": "sources", "data": sources}
+            yield _sources_event(sources, mode_info)
             yield {"type": "done"}
 
         return event_stream()

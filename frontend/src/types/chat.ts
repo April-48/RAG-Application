@@ -12,6 +12,9 @@ export interface Source {
 export interface AnswerResponse {
   answer: string;
   sources: Source[];
+  retrieval_mode?: string | null;
+  retrieval_page?: number | null;
+  retrieval_section?: string | null;
 }
 
 /** One bubble in the Chat UI (not exactly the same as a DB Message row). */
@@ -20,6 +23,9 @@ export interface ChatMessage {
   role: "user" | "assistant";
   content: string;
   sources?: Source[];
+  retrieval_mode?: string | null;
+  retrieval_page?: number | null;
+  retrieval_section?: string | null;
   /** True while tokens are still streaming into this assistant message. */
   streaming?: boolean;
 }
@@ -30,5 +36,8 @@ export interface MessageRecord {
   role: "user" | "assistant" | "system";
   content: string;
   sources: Source[];
+  retrieval_mode?: string | null;
+  retrieval_page?: number | null;
+  retrieval_section?: string | null;
   created_at: string;
 }

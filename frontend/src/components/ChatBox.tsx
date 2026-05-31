@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { ChatMessage, Source } from "../types/chat";
+import { formatRetrievalModeLabel } from "../utils/retrievalModeLabel";
 import TypingIndicator from "./chat/TypingIndicator";
 
 interface ChatBoxProps {
@@ -170,6 +171,14 @@ export default function ChatBox({
                 }
 
                 const hasSources = !!m.sources && m.sources.length > 0;
+                const retrievalLabel =
+                  m.role === "assistant" && m.retrieval_mode
+                    ? formatRetrievalModeLabel(
+                        m.retrieval_mode,
+                        m.retrieval_page,
+                        m.retrieval_section,
+                      )
+                    : null;
                 const isUser = m.role === "user";
                 const bubbleClassName = `max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
                   isUser
@@ -192,7 +201,7 @@ export default function ChatBox({
                 return (
                   <div
                     key={m.id ?? `${m.role}-${m.content.slice(0, 32)}-${i}`}
-                    className={`flex ${isUser ? "justify-end" : "justify-start"}`}
+                    className={`flex flex-col ${isUser ? "items-end" : "items-start"}`}
                   >
                     {hasSources ? (
                       <button
@@ -206,6 +215,11 @@ export default function ChatBox({
                       </button>
                     ) : (
                       <div className={bubbleClassName}>{bubbleContent}</div>
+                    )}
+                    {retrievalLabel && (
+                      <p className="mt-1.5 px-1 text-xs text-slate-500">
+                        Retrieved via: {retrievalLabel}
+                      </p>
                     )}
                   </div>
                 );

@@ -27,6 +27,9 @@ class SourceItem(BaseModel):
 class AnswerResponse(BaseModel):
     answer: str
     sources: list[SourceItem]
+    retrieval_mode: str | None = None
+    retrieval_page: int | None = None
+    retrieval_section: str | None = None
 
 
 # One message row returned by GET /chat/{document_id}/history.
@@ -36,6 +39,9 @@ class MessageItem(BaseModel):
     role: str
     content: str
     sources: list[SourceItem] = Field(default_factory=list)
+    retrieval_mode: str | None = None
+    retrieval_page: int | None = None
+    retrieval_section: str | None = None
     created_at: datetime
 
 

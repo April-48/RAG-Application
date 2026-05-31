@@ -42,6 +42,9 @@ class Settings(BaseSettings):
     llm_provider: str = "openai"  # "openai" | "openai-compatible"
     llm_model: str = "gpt-5-mini"
     llm_base_url: str = ""
+    # Omit from API requests when unset — gpt-5-mini only supports the provider default.
+    # Set LLM_TEMPERATURE=0 in .env for models like gpt-4o-mini that allow it.
+    llm_temperature: float | None = None
     # How many chunks we pull from pgvector per question.
     retrieval_top_k: int = 8
     # Minimum cosine similarity (1 - pgvector distance) when enforcement is on.

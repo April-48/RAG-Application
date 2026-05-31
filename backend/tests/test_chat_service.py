@@ -14,7 +14,7 @@ from app.models.document import Document
 from app.rag.pipeline import GenerationOutput
 from app.rag.query_router import QueryMode, RoutedQuery
 from app.rag.retrieval_service import RetrievalResult
-from app.services.chat_service import ChatService, ClearHistoryResult
+from app.services.chat_service import ChatService, ClearHistoryResult, unpack_sources_storage
 
 
 def _ready_document(owner_id: uuid.UUID) -> Document:
@@ -118,7 +118,7 @@ def test_ask_returns_direct_extraction_without_llm_prompt_chunks(db_session) -> 
         pipeline=pipeline,
     )
 
-    answer, sources = service.ask(
+    answer, sources, mode_info = service.ask(
         user_id=user_id,
         document_id=document.id,
         question="What is the first sentence of the document?",
@@ -127,6 +127,11 @@ def test_ask_returns_direct_extraction_without_llm_prompt_chunks(db_session) -> 
     assert answer == "Hello world."
     assert len(sources) == 1
     assert sources[0]["chunk_index"] == 0
+    assert mode_info == {
+        "retrieval_mode": "document_beginning",
+        "retrieval_page": None,
+        "retrieval_section": None,
+    }
     pipeline.generate.assert_called_once()
 
 
@@ -166,7 +171,7 @@ def test_ask_returns_mocked_answer_and_sources(db_session) -> None:
         llm=MockLLM(),
     )
 
-    answer, sources = service.ask(
+    answer, sources, mode_info = service.ask(
         user_id=user_id,
         document_id=document.id,
         question="How long is the warranty?",
@@ -177,6 +182,11 @@ def test_ask_returns_mocked_answer_and_sources(db_session) -> None:
     assert sources[0]["chunk_index"] == 0
     assert sources[0]["page_number"] == 1
     assert "warranty" in sources[0]["chunk_text"]
+    assert mode_info == {
+        "retrieval_mode": "semantic",
+        "retrieval_page": None,
+        "retrieval_section": None,
+    }
     pipeline.retrieve.assert_called_once()
     pipeline.generate.assert_called_once()
     assert chats.add_message.call_count >= 2
@@ -280,3 +290,26 @@ def test_clear_history_returns_zero_when_no_session(db_session) -> None:
     cache.clear_for_document.assert_called_once_with(
         user_id=user_id, document_id=document.id
     )
+
+
+def test_unpack_sources_storage_legacy_list() -> None:
+    sources = [{"chunk_index": 0, "page_number": 1, "chunk_text": "Hi"}]
+    unpacked, mode_info = unpack_sources_storage(sources)
+    assert unpacked == sources
+    assert mode_info is None
+
+
+def test_unpack_sources_storage_wrapped_with_mode() -> None:
+    payload = {
+        "retrieval_mode": "page_lookup",
+        "retrieval_page": 3,
+        "retrieval_section": None,
+        "sources": [{"chunk_index": 2, "page_number": 3, "chunk_text": "Page three"}],
+    }
+    unpacked, mode_info = unpack_sources_storage(payload)
+    assert len(unpacked) == 1
+    assert mode_info == {
+        "retrieval_mode": "page_lookup",
+        "retrieval_page": 3,
+        "retrieval_section": None,
+    }

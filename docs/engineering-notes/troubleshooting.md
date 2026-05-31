@@ -16,6 +16,7 @@ This is lightweight validation, not malware scanning. See [known-limitations.md]
 
 - Check `OPENAI_API_KEY` in root `.env`
 - Or set `LLM_BASE_URL` for a local server and make sure it is running
+- **`gpt-5-mini`** does not accept `LLM_TEMPERATURE=0` — leave `LLM_TEMPERATURE` unset (default) or remove it from `.env`
 - Ingestion can still work while chat fails (different config)
 
 ## Document stuck on `processing`

@@ -16,7 +16,7 @@ from sqlalchemy.orm import Session
 from app.db.database import get_db
 from app.core.exceptions import DocumentNotFoundError, DocumentNotReadyError, LLMError
 from app.models.user import User
-from app.services.chat_service import ChatService
+from app.services.chat_service import ChatService, unpack_sources_storage
 
 from ..dependencies.chat_rate_limit import get_current_user_with_chat_rate_limit
 from ..dependencies.get_current_user import get_current_user
@@ -45,7 +45,7 @@ def ask(
     db: Session = Depends(get_db),
 ) -> AnswerResponse:
     try:
-        answer, sources = ChatService(db).ask(
+        answer, sources, mode_info = ChatService(db).ask(
             user_id=current_user.id,
             document_id=document_id,
             question=payload.question,
@@ -68,6 +68,9 @@ def ask(
     return AnswerResponse(
         answer=answer,
         sources=[SourceItem(**source) for source in sources],
+        retrieval_mode=mode_info.get("retrieval_mode") if mode_info else None,
+        retrieval_page=mode_info.get("retrieval_page") if mode_info else None,
+        retrieval_section=mode_info.get("retrieval_section") if mode_info else None,
     )
 
 
@@ -142,12 +145,14 @@ def history(
             id=message.id,
             role=message.role,
             content=message.content,
-            sources=[
-                SourceItem(**source) for source in (message.sources_json or [])
-            ],
+            sources=[SourceItem(**source) for source in sources],
+            retrieval_mode=mode_info.get("retrieval_mode") if mode_info else None,
+            retrieval_page=mode_info.get("retrieval_page") if mode_info else None,
+            retrieval_section=mode_info.get("retrieval_section") if mode_info else None,
             created_at=message.created_at,
         )
         for message in messages
+        for sources, mode_info in [unpack_sources_storage(message.sources_json)]
     ]
 
 

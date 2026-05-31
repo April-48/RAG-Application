@@ -4,7 +4,8 @@ get_llm_service() reads LLM_MODEL, LLM_BASE_URL, and OPENAI_API_KEY from
 settings. Works with OpenAI, OpenRouter, Ollama, vLLM, etc. when the server
 speaks the OpenAI chat completions API.
 
-Temperature is fixed at 0 for grounded, repeatable answers.
+Temperature is omitted by default so models like gpt-5-mini that only accept the
+provider default still work. Set LLM_TEMPERATURE in .env when your model supports it.
 """
 
 from __future__ import annotations
@@ -49,6 +50,7 @@ class OpenAILLMService:
         self.base_url = (
             base_url if base_url is not None else (settings.llm_base_url or None)
         )
+        self.temperature = settings.llm_temperature
         self._client = None
 
     # Lazy-create the OpenAI client — works with OpenAI or compatible servers.
@@ -67,16 +69,25 @@ class OpenAILLMService:
             )
         return self._client
 
+    def _completion_kwargs(self, *, stream: bool) -> dict:
+        kwargs: dict = {
+            "model": self.model,
+            "messages": [],  # filled by caller
+        }
+        if self.temperature is not None:
+            kwargs["temperature"] = self.temperature
+        if stream:
+            kwargs["stream"] = True
+        return kwargs
+
     # Non-streaming chat completion — returns full assistant text.
     # Raises LLMError on network or API failures.
     def generate(self, messages: list[dict[str, str]]) -> str:
         client = self._get_client()
+        kwargs = self._completion_kwargs(stream=False)
+        kwargs["messages"] = messages
         try:
-            response = client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0,
-            )
+            response = client.chat.completions.create(**kwargs)
         except Exception as exc:  # pragma: no cover - network/runtime failures
             raise LLMError(f"LLM request failed: {exc}") from exc
 
@@ -89,13 +100,10 @@ class OpenAILLMService:
         self, messages: list[dict[str, str]]
     ) -> Iterator[str]:
         client = self._get_client()
+        kwargs = self._completion_kwargs(stream=True)
+        kwargs["messages"] = messages
         try:
-            stream = client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                temperature=0,
-                stream=True,
-            )
+            stream = client.chat.completions.create(**kwargs)
             for chunk in stream:
                 if not chunk.choices:
                     continue

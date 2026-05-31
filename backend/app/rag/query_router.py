@@ -166,6 +166,15 @@ class RoutedQuery:
     section_name: str | None = None
 
 
+def retrieval_mode_info(routed: RoutedQuery) -> dict[str, str | int | None]:
+    """API-friendly retrieval metadata for chat responses and history."""
+    return {
+        "retrieval_mode": routed.mode.value,
+        "retrieval_page": routed.page_number,
+        "retrieval_section": routed.section_name,
+    }
+
+
 def route_question(question: str) -> RoutedQuery:
     """Pick a retrieval mode from the question wording.
 
