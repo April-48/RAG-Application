@@ -24,4 +24,4 @@ Run from repo root:
 uvicorn middleware.app.main:app --reload --port 8000
 ```
 
-Docs: [setup](../docs/setup.md) · [api_design](../docs/api_design.md)
+Docs: [setup](../docs/setup.md) · [api_design](../docs/api_design.md) · [RAG pipeline](../docs/rag_pipeline.md)

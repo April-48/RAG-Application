@@ -19,8 +19,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 from app.db.database import get_db  # noqa: E402
+from app.models.chat_session import ChatSession  # noqa: E402
 from app.models.document import Document  # noqa: E402
 from app.models.document_permission import DocumentPermission  # noqa: E402
+from app.models.message import Message  # noqa: E402
 from app.models.user import User  # noqa: E402
 from app.services.auth_service import AuthService  # noqa: E402
 
@@ -36,6 +38,8 @@ def db_session() -> Generator[Session, None, None]:
     User.__table__.create(engine)
     Document.__table__.create(engine)
     DocumentPermission.__table__.create(engine)
+    ChatSession.__table__.create(engine)
+    Message.__table__.create(engine)
     session = sessionmaker(bind=engine, autoflush=False, autocommit=False)()
     try:
         yield session
@@ -43,6 +47,8 @@ def db_session() -> Generator[Session, None, None]:
         session.close()
         DocumentPermission.__table__.drop(engine)
         Document.__table__.drop(engine)
+        Message.__table__.drop(engine)
+        ChatSession.__table__.drop(engine)
         User.__table__.drop(engine)
 
 

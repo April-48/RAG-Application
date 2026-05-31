@@ -193,7 +193,7 @@ def test_unknown_section_returns_no_answer() -> None:
     assert result.skip_llm_message == SECTION_NOT_FOUND_MESSAGE
 
 
-def test_semantic_below_threshold_returns_no_answer() -> None:
+def test_semantic_below_threshold_returns_no_answer_when_enforced() -> None:
     document_id = uuid.uuid4()
     weak_hit = _chunk(
         document_id=document_id,
@@ -210,11 +210,45 @@ def test_semantic_below_threshold_returns_no_answer() -> None:
     service = RetrievalService(MagicMock(), embedder=embedder)
     service.chunks = chunks_repo
 
-    with patch.object(get_settings(), "retrieval_min_similarity", 0.32):
+    settings = get_settings()
+    with (
+        patch.object(settings, "retrieval_min_similarity", 0.32),
+        patch.object(settings, "retrieval_enforce_similarity_threshold", True),
+    ):
         result = service.retrieve(document_id, "What is the CEO's favorite color?")
 
     assert result.chunks == []
     assert result.skip_llm_message == WEAK_EVIDENCE_MESSAGE
+
+
+def test_semantic_below_threshold_still_returns_chunks_when_not_enforced() -> None:
+    document_id = uuid.uuid4()
+    weak_hit = _chunk(
+        document_id=document_id,
+        chunk_index=0,
+        text="Limitations include small sample size.",
+    )
+
+    chunks_repo = MagicMock()
+    chunks_repo.search_by_document_with_distance.return_value = [(weak_hit, 0.95)]
+
+    embedder = MagicMock()
+    embedder.embed_query.return_value = [0.1] * 384
+
+    service = RetrievalService(MagicMock(), embedder=embedder)
+    service.chunks = chunks_repo
+
+    settings = get_settings()
+    with (
+        patch.object(settings, "retrieval_min_similarity", 0.32),
+        patch.object(settings, "retrieval_enforce_similarity_threshold", False),
+    ):
+        result = service.retrieve(
+            document_id, "What limitations does the paper mention?"
+        )
+
+    assert result.chunks == [weak_hit]
+    assert result.skip_llm_message is None
 
 
 def test_summary_retrieves_representative_chunks() -> None:

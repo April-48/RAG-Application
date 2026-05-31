@@ -26,4 +26,25 @@ The embedding dimension in your config must match the DB column. Default is 384 
 
 No OCR — use text-based PDF, TXT, or DOCX.
 
+## RAG answers say “insufficient information” but sources look useful
+
+Retrieval probably worked; the problem is usually downstream. See [rag_pipeline.md — Debugging insufficient-context answers](../rag_pipeline.md#debugging-insufficient-context-answers).
+
+Quick checks:
+
+1. **Stale Redis cache** — Clear chat history for that document, or set `ENABLE_REDIS_CACHE=false` while testing.
+2. **Strict threshold** — Ensure `RETRIEVAL_ENFORCE_SIMILARITY_THRESHOLD=false` in `.env`, then restart middleware.
+3. **Old chunks** — Re-upload the document after text-cleanup or embedding changes.
+4. **Logs** — `docker compose logs -f middleware | grep -E "Retrieval|LLM prompt|Answer path"`
+
+If logs show `LLM insufficient-context despite N chunks`, focus on prompt wording and chunk text quality (PDF boilerplate), not retrieval scope.
+
+## Middleware fails to start (ImportError)
+
+After RAG refactors, rebuild the middleware image — it does not mount source code:
+
+```bash
+docker compose up -d --build middleware
+```
+
 See [known-limitations.md](known-limitations.md) for MVP gaps.

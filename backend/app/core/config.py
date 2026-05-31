@@ -42,9 +42,13 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-4o-mini"
     llm_base_url: str = ""
     # How many chunks we pull from pgvector per question.
-    retrieval_top_k: int = 5
-    # Minimum cosine similarity (1 - pgvector distance) for SEMANTIC retrieval.
-    retrieval_min_similarity: float = 0.32
+    retrieval_top_k: int = 8
+    # Minimum cosine similarity (1 - pgvector distance) when enforcement is on.
+    retrieval_min_similarity: float = 0.20
+    # When False (MVP default), I still send top-k chunks to the LLM if pgvector
+    # returns any hits — the LLM prompt handles "not enough context" instead of
+    # blocking here. Set True to pre-filter weak semantic matches.
+    retrieval_enforce_similarity_threshold: bool = False
 
     # --- Optional Redis answer cache — app still works if Redis is off/down ---
     redis_url: str = "redis://localhost:6379/0"

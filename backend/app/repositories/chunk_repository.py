@@ -51,6 +51,7 @@ class ChunkRepository:
         )]
 
     # Return top-k chunks plus pgvector cosine distance (lower = more similar).
+    # Results are ordered ascending by distance — best match first.
     def search_by_document_with_distance(
         self,
         document_id: uuid.UUID,

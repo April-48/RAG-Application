@@ -147,8 +147,11 @@ cp .env.example .env
 | `REDIS_URL` | Redis | `redis://localhost:6379/0` on host |
 | `JWT_SECRET_KEY` | JWT signing | Change from placeholder for anything beyond solo dev |
 | `EMBEDDING_PROVIDER` / `EMBEDDING_MODEL` / `EMBEDDING_DIM` | Embeddings | Default: `local` / `sentence-transformers/all-MiniLM-L6-v2` / **384** |
-| `RETRIEVAL_TOP_K` | Semantic retrieval | Default **5** chunks |
-| `RETRIEVAL_MIN_SIMILARITY` | Evidence threshold | Default **0.32** — below this, no LLM call |
+| `RETRIEVAL_TOP_K` | Semantic retrieval | Default **8** chunks |
+| `RETRIEVAL_MIN_SIMILARITY` | Similarity floor when enforcement is on | Default **0.20** |
+| `RETRIEVAL_ENFORCE_SIMILARITY_THRESHOLD` | Pre-filter weak hits before LLM | Default **false** (MVP — LLM decides) |
+
+**RAG tuning and debugging:** [rag_pipeline.md](rag_pipeline.md)
 | `OPENAI_API_KEY` | LLM chat | Required unless you use a local OpenAI-compatible server |
 | `LLM_MODEL` / `LLM_BASE_URL` | LLM config | Default `gpt-4o-mini`; set base URL for OpenRouter/Ollama |
 | `ENABLE_REDIS_CACHE` | Answer cache | `true` in `.env.example`; code defaults to `false` without `.env` |

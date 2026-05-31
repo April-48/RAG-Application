@@ -13,7 +13,7 @@ from app.models.chunk import DocumentChunk
 from app.models.document import Document
 from app.rag.query_router import QueryMode, RoutedQuery
 from app.rag.retrieval_service import RetrievalResult
-from app.services.chat_service import ChatService
+from app.services.chat_service import ChatService, ClearHistoryResult
 
 
 def _ready_document(owner_id: uuid.UUID) -> Document:
@@ -156,3 +156,69 @@ def test_llm_error_propagates_from_pipeline(db_session) -> None:
             document_id=document.id,
             question="Trigger failure",
         )
+
+
+def test_clear_history_deletes_messages_and_returns_count(db_session) -> None:
+    user_id = uuid.uuid4()
+    document = _ready_document(user_id)
+    session_id = uuid.uuid4()
+
+    documents = MagicMock()
+    documents.get_accessible_document.return_value = document
+
+    chats = MagicMock()
+    chats.get_session.return_value = MagicMock(id=session_id)
+    chats.clear_messages.return_value = 4
+
+    cache = MagicMock()
+    cache.clear_for_document.return_value = 2
+
+    service = ChatService(
+        db_session,
+        documents=documents,
+        chats=chats,
+        cache=cache,
+        pipeline=MagicMock(),
+    )
+
+    result = service.clear_history(user_id=user_id, document_id=document.id)
+
+    assert result == ClearHistoryResult(deleted=4, cache_cleared=2)
+    documents.get_accessible_document.assert_called_once_with(document.id, user_id)
+    chats.get_session.assert_called_once_with(
+        user_id=user_id, document_id=document.id
+    )
+    chats.clear_messages.assert_called_once_with(session_id)
+    cache.clear_for_document.assert_called_once_with(
+        user_id=user_id, document_id=document.id
+    )
+
+
+def test_clear_history_returns_zero_when_no_session(db_session) -> None:
+    user_id = uuid.uuid4()
+    document = _ready_document(user_id)
+
+    documents = MagicMock()
+    documents.get_accessible_document.return_value = document
+
+    chats = MagicMock()
+    chats.get_session.return_value = None
+
+    cache = MagicMock()
+    cache.clear_for_document.return_value = 0
+
+    service = ChatService(
+        db_session,
+        documents=documents,
+        chats=chats,
+        cache=cache,
+        pipeline=MagicMock(),
+    )
+
+    result = service.clear_history(user_id=user_id, document_id=document.id)
+
+    assert result == ClearHistoryResult(deleted=0, cache_cleared=0)
+    chats.clear_messages.assert_not_called()
+    cache.clear_for_document.assert_called_once_with(
+        user_id=user_id, document_id=document.id
+    )

@@ -23,6 +23,7 @@ from ..dependencies.get_current_user import get_current_user
 from ..schemas.chat_schema import (
     AnswerResponse,
     AskRequest,
+    ClearHistoryResponse,
     MessageItem,
     SourceItem,
 )
@@ -148,3 +149,27 @@ def history(
         )
         for message in messages
     ]
+
+
+@router.delete("/{document_id}/history", response_model=ClearHistoryResponse)
+# DELETE /chat/{document_id}/history — remove all saved messages for this user + doc.
+# ChatService checks document access first, then deletes rows in chat_sessions / messages.
+# Return deleted=0 when no conversation exists yet.
+# Return HTTP 404 if the document is missing or not accessible.
+def clear_history(
+    document_id: uuid.UUID,
+    current_user: User = Depends(get_current_user),
+    db: Session = Depends(get_db),
+) -> ClearHistoryResponse:
+    try:
+        result = ChatService(db).clear_history(
+            user_id=current_user.id, document_id=document_id
+        )
+    except DocumentNotFoundError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND, detail="Document not found"
+        ) from exc
+
+    return ClearHistoryResponse(
+        deleted=result.deleted, cache_cleared=result.cache_cleared
+    )

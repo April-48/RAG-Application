@@ -38,10 +38,19 @@ Paragraphs and simple tables only. No `.doc`, no complex layouts.
 
 Uses phrase matching for page/section/summary questions. If the wording is unusual, it falls back to semantic search — which may not always be what the user wanted. Page lookup needs PDF page metadata.
 
+## RAG answer quality (MVP)
+
+- Retrieval is scoped to one document and uses the same embedder for ingest + query, but **semantic search is not perfect** — unusual phrasing may miss the best chunk.
+- PDF text cleanup runs at ingest time; **re-upload** after cleanup changes.
+- The LLM prompt is grounded but may still refuse when chunks are mostly boilerplate or only loosely related.
+
+See [rag_pipeline.md](../rag_pipeline.md) for tuning and debugging.
+
 ## Other gaps
 
 - Redis rate limit is a basic demo guard, not real abuse prevention
-- The answer cache only expires by TTL — it is not cleared when document chunks change
+- Answer cache expires by TTL; it is **not** invalidated when document chunks change — use **Clear chat history** or re-upload to avoid stale cached answers for that document
+- Insufficient-context answers are never cached
 - No monitoring or audit logs
 
 Scaling path (workers, S3, load balancer, vector indexes) is described in [system design](../system_design.md#future-scalability-focus).

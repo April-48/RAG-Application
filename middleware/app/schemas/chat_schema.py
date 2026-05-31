@@ -37,3 +37,9 @@ class MessageItem(BaseModel):
     content: str
     sources: list[SourceItem] = Field(default_factory=list)
     created_at: datetime
+
+
+# Response for DELETE /chat/{document_id}/history.
+class ClearHistoryResponse(BaseModel):
+    deleted: int
+    cache_cleared: int = 0

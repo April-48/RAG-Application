@@ -11,7 +11,7 @@ app/
 ├── models/        User, Document, Chunk, Chat, Message
 ├── repositories/  owner-scoped DB queries
 ├── services/      auth, documents, chat
-├── rag/           loader, splitter, embed, router, retrieve, LLM, pipeline
+├── rag/           loader, cleanup, splitter, embed, router, retrieve, prompt, LLM, pipeline
 ├── cache/         Redis cache + rate limit
 ├── storage/       local file backend
 └── workers/       ingest_document() for BackgroundTasks
@@ -27,6 +27,22 @@ storage/uploads/   runtime files (gitignored)
 - Retrieval always scoped to one `document_id`  
 - Routes → services → repos → DB  
 
+## RAG modules (`app/rag/`)
+
+| Module | Role |
+| ------ | ---- |
+| `loader.py` | Parse PDF/TXT/DOCX, run text cleanup |
+| `text_cleanup.py` | Remove boilerplate and repeated headers |
+| `text_splitter.py` | Chunk pages (1000 / 200 overlap) |
+| `embedding_service.py` | Local MiniLM or OpenAI embeddings |
+| `query_router.py` | Rule-based question routing |
+| `retrieval_service.py` | Hybrid chunk fetch + pgvector search |
+| `prompt_builder.py` | Grounded LLM messages |
+| `generation.py` | LLM call + context logging |
+| `pipeline.py` | Ingest / retrieve / generate orchestration |
+
+Details: [RAG pipeline](../docs/rag_pipeline.md)
+
 ## Docs
 
-- [Setup](../docs/setup.md) · [System design](../docs/system_design.md) · [ADRs](../docs/adr/)
+- [Setup](../docs/setup.md) · [System design](../docs/system_design.md) · [RAG pipeline](../docs/rag_pipeline.md) · [ADRs](../docs/adr/)

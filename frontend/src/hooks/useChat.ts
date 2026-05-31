@@ -18,7 +18,9 @@ export interface UseChatResult {
   error: string | null;
   rateLimitWarning: string | null;
   loadingHistory: boolean;
+  clearingHistory: boolean;
   send: (question: string) => Promise<void>;
+  clearHistory: () => Promise<boolean>;
 }
 
 /** Chat hook for one document — history, streaming send, and error state. */
@@ -28,6 +30,7 @@ export function useChat(documentId: string): UseChatResult {
   const [error, setError] = useState<string | null>(null);
   const [rateLimitWarning, setRateLimitWarning] = useState<string | null>(null);
   const [loadingHistory, setLoadingHistory] = useState(true);
+  const [clearingHistory, setClearingHistory] = useState(false);
   const busyRef = useRef(false);
 
   // Switching documents = new history fetch. cancelled flag avoids race updates.
@@ -165,5 +168,35 @@ export function useChat(documentId: string): UseChatResult {
     [documentId, updateLastAssistant],
   );
 
-  return { messages, busy, error, rateLimitWarning, loadingHistory, send };
+  /** Delete all saved messages for this document and reset local state. */
+  const clearHistory = useCallback(async (): Promise<boolean> => {
+    if (busyRef.current || clearingHistory) return false;
+
+    setClearingHistory(true);
+    setError(null);
+    try {
+      await chatApi.clearHistory(documentId);
+      setMessages([]);
+      setRateLimitWarning(null);
+      return true;
+    } catch (err) {
+      setError(
+        err instanceof ApiError ? err.message : "Failed to clear history",
+      );
+      return false;
+    } finally {
+      setClearingHistory(false);
+    }
+  }, [clearingHistory, documentId]);
+
+  return {
+    messages,
+    busy,
+    error,
+    rateLimitWarning,
+    loadingHistory,
+    clearingHistory,
+    send,
+    clearHistory,
+  };
 }

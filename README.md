@@ -10,6 +10,8 @@ It runs locally with Docker Compose. It is an MVP, not a production app — but 
 - Upload PDF, TXT, and DOCX files
 - Background ingestion with status tracking (`uploaded` → `processing` → `ready` / `failed`)
 - Text chunking, embeddings, and **hybrid RAG retrieval** (rule-based query router + pgvector search)
+- Grounded answers with source snippets; synthesis across retrieved chunks when helpful
+- Clear chat history (messages + Redis answer cache for that document)
 - Single-document chat with source snippets
 - Streaming chat answers over SSE
 - Optional Redis answer cache for repeat questions (app still works if Redis is down)
@@ -45,6 +47,7 @@ This keeps local setup simple while still showing clear boundaries for interview
 | Artifact | Link |
 | -------- | ---- |
 | System design (includes scalability) | [docs/system_design.md](docs/system_design.md) |
+| RAG pipeline (retrieval, prompts, debugging) | [docs/rag_pipeline.md](docs/rag_pipeline.md) |
 | Achieved vs future work | [docs/engineering-notes/achieved-and-future-work.md](docs/engineering-notes/achieved-and-future-work.md) |
 | Known limitations | [docs/engineering-notes/known-limitations.md](docs/engineering-notes/known-limitations.md) |
 | GitHub repo | [April-48/RAG-Application](https://github.com/April-48/RAG-Application) |
@@ -100,15 +103,17 @@ Set `OPENAI_API_KEY` (or `LLM_BASE_URL`) before testing chat.
 2. Upload a **text-based** PDF, TXT, or DOCX (scanned PDFs need OCR — not built yet).
 3. Wait until status is `ready`.
 4. Open Chat and select the document.
-5. Ask a question that the document can answer. Show streaming response and sources.
+5. Ask a content question the document can answer (e.g. main idea, key points, limitations). Show streaming response and sources.
 6. With Redis running, ask the **same question twice** to show cache hit (see checklist).
-7. Optional: sign up as a second user and confirm that the first user's document returns **404** — not 403, not the document.
+7. Optional: **Clear chat history** and confirm messages disappear.
+8. Optional: sign up as a second user and confirm that the first user's document returns **404** — not 403, not the document.
 
 ## Engineering Docs
 
 | Document | Purpose |
 | -------- | ------- |
 | [System Design](docs/system_design.md) | Architecture, scalability, RAG flows |
+| [RAG Pipeline](docs/rag_pipeline.md) | Ingest, retrieval, prompts, debugging |
 | [Achieved vs Future Work](docs/engineering-notes/achieved-and-future-work.md) | What works today vs what is left |
 | [API Design](docs/api_design.md) | HTTP API surface |
 | [Setup Guide](docs/setup.md) | Prerequisites, env vars, commands |
@@ -156,7 +161,7 @@ This is an MVP, not a production RAG platform.
 - Ingestion uses FastAPI `BackgroundTasks`, not a real job queue
 - Local disk storage does not work well with multiple API servers
 - Scanned/image-only PDFs need OCR (not implemented)
-- The answer cache only expires by TTL — it is not cleared when document chunks change
+- Answer cache expires by TTL; not invalidated when chunks change — **Clear chat history** clears cache for that document, or re-upload after ingest changes
 - Switching embedding dimensions (e.g. local 384 → OpenAI 1536) requires a new migration and full re-ingest
 - Redis chat rate limiting is optional and fail-open; not real abuse prevention
 

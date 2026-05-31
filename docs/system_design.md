@@ -8,7 +8,7 @@ For a shorter “what works / what’s missing” list, see [achieved-and-future
 
 | Topic | Where to look |
 | ----- | ------------- |
-| RAG pipeline (upload → answer) | [README demo flow](../README.md#demo-flow) |
+| RAG pipeline (upload → answer) | [rag_pipeline.md](rag_pipeline.md) · [README demo flow](../README.md#demo-flow) |
 | Three-layer architecture | Layers below + [ADR 0001](adr/0001-three-layer-architecture.md) |
 | Scaling beyond local | Section below + ADRs 0004–0007 |
 | UI | React app in `frontend/` |
@@ -85,16 +85,21 @@ Documents have an `owner_id`. Repositories only query by owner. Other users get 
 ## Ingestion flow
 
 1. Upload → save file → status `uploaded` → return immediately
-2. Background task → `processing` → parse/chunk/embed → `ready` or `failed`
+2. Background task → `processing` → **parse → text cleanup → chunk → embed** → `ready` or `failed`
 3. UI polls `GET /documents`
+
+**Text cleanup** (`text_cleanup.py`) runs before chunking: drops empty lines, strips common copyright/proceedings boilerplate, and removes lines repeated across many PDF pages (headers/footers). Documents uploaded **before** cleanup was added keep old chunks until re-uploaded.
 
 ## Q&A flow
 
 1. Check document is owned and `ready`
-2. Optional Redis cache lookup
-3. Hybrid retrieval (below)
-4. LLM answer (or skip LLM for direct extraction / weak evidence)
-5. Save history + sources; cache successful answers
+2. Optional Redis cache lookup (skipped for insufficient-context answers)
+3. Hybrid retrieval (below) — always scoped to one `document_id`
+4. Build grounded prompt from retrieved `chunk_text` (+ page/chunk metadata)
+5. LLM answer, direct extraction, or insufficient-context guard
+6. Save history + sources; cache successful answers only
+
+See [rag_pipeline.md](rag_pipeline.md) for retrieval tuning, logging, and debugging.
 
 ## Hybrid RAG retrieval
 
@@ -107,13 +112,21 @@ Before the LLM, `query_router` picks a mode. This is simple rule-based routing p
 | `page_lookup` | what is on page 3 | Usually yes |
 | `section_lookup` | Methods section | Depends |
 | `whole_document_summary` | summarize this document | Yes |
-| `semantic` (default) | normal factual questions | Yes, if similarity ≥ 0.32 |
+| `semantic` (default) | normal factual questions | Yes — top-k chunks go to LLM |
+
+**Semantic search:** query and chunks use the **same** embedder (`EMBEDDING_PROVIDER` / `EMBEDDING_MODEL`). pgvector returns chunks ordered by **ascending cosine distance** (lower = more similar). Default **`RETRIEVAL_TOP_K=8`**.
+
+**Threshold (MVP default):** `RETRIEVAL_ENFORCE_SIMILARITY_THRESHOLD=false` — pgvector hits are not dropped for low similarity; the LLM decides from context. Set `true` to pre-filter weak matches.
+
+**Usable-chunk filter:** chunks with very little text (< ~30 chars) are dropped after retrieval. If none remain, the pipeline returns insufficient-context without calling the LLM.
+
+**Prompt:** answers must stay grounded in retrieved context, but the model may **synthesize across snippets** and give **partial answers with uncertainty**. The fixed insufficient-context line is only for when context has **no** relevant information.
 
 Sources shown in the UI come from **retrieved chunks**, not from parsing the LLM output.
 
 ## Redis
 
-**Cache** (`ENABLE_REDIS_CACHE`): key `rag:answer:{user}:{doc}:{hash(question)}`, TTL 3600s default.
+**Cache** (`ENABLE_REDIS_CACHE`): key `rag:answer:{user}:{doc}:{hash(question)}`, TTL 3600s default. Insufficient-context answers are **not** cached. **Clear chat history** (`DELETE /chat/{document_id}/history`) removes Postgres messages and Redis answer keys for that user + document.
 
 **Rate limit** (`ENABLE_RATE_LIMIT`): 10 asks/min per user on chat routes; HTTP 429 if exceeded.
 
@@ -156,5 +169,6 @@ Things like multi-document chat, OCR, or shared folders are useful product ideas
 
 ## Related docs
 
+- [rag_pipeline.md](rag_pipeline.md) — retrieval, prompts, debugging insufficient answers
 - [achieved-and-future-work.md](engineering-notes/achieved-and-future-work.md)
 - [setup.md](setup.md) · [api_design.md](api_design.md) · [adr/](adr/)

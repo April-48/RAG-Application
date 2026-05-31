@@ -19,7 +19,9 @@ Things I check before a demo or submission video.
 - [ ] Upload PDF or TXT
 - [ ] Status reaches `ready`
 - [ ] Ask a question → streaming answer + sources
+- [ ] Try a content question (main idea, limitations, summarize)
 - [ ] Refresh page → history still there
+- [ ] Clear chat history → messages gone
 
 ## Nice to show (optional)
 
@@ -27,4 +29,4 @@ Things I check before a demo or submission video.
 - [ ] “First sentence of the document” → hybrid router, no LLM
 - [ ] Second user cannot open first user's doc id (404)
 
-If something breaks: [troubleshooting.md](troubleshooting.md)
+If RAG answers look wrong: [rag_pipeline.md](../rag_pipeline.md) · [troubleshooting.md](troubleshooting.md)

@@ -14,7 +14,9 @@ interface ChatBoxProps {
   error: string | null;
   rateLimitWarning?: string | null;
   loadingHistory: boolean;
+  clearingHistory?: boolean;
   onSend: (question: string) => void;
+  onClearHistory?: () => void;
   onSelectSources?: (sources: Source[]) => void;
   documentTitle: string;
   onOpenOriginalFile?: () => void;
@@ -34,7 +36,9 @@ export default function ChatBox({
   error,
   rateLimitWarning = null,
   loadingHistory,
+  clearingHistory = false,
   onSend,
+  onClearHistory,
   onSelectSources,
   documentTitle,
   onOpenOriginalFile,
@@ -87,6 +91,16 @@ export default function ChatBox({
           {documentTitle}
         </h2>
         <div className="flex shrink-0 items-center gap-2">
+          {onClearHistory && messages.length > 0 && (
+            <button
+              type="button"
+              onClick={onClearHistory}
+              disabled={busy || clearingHistory || loadingHistory}
+              className="rounded-lg border border-white/60 bg-white/50 px-3 py-1.5 text-xs font-medium text-slate-600 backdrop-blur-sm transition hover:bg-white/70 hover:text-slate-800 disabled:opacity-50"
+            >
+              {clearingHistory ? "Clearing…" : "Clear history"}
+            </button>
+          )}
           {!showSourcesPanel && onOpenSourcesPanel && (
             <button
               type="button"

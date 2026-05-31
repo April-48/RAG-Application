@@ -38,6 +38,13 @@ def build_cache_key(
     )
 
 
+# Pattern for every cached answer under one user + document pair.
+def build_document_cache_pattern(
+    user_id: uuid.UUID, document_id: uuid.UUID
+) -> str:
+    return f"{CACHE_KEY_PREFIX}:{user_id}:{document_id}:*"
+
+
 # Thin wrapper around Redis for (user, doc, question) -> answer + sources.
 # I fail open on any Redis error so chat keeps working without the cache.
 class AnswerCache:
@@ -107,3 +114,30 @@ class AnswerCache:
                 "Redis cache set failed (%s); continuing without cache", exc
             )
             return  # Don't fail the request just because cache write failed.
+
+    # Delete all cached answers for one user + document (e.g. after clear history).
+    # Output: number of Redis keys removed; 0 when cache is off or Redis fails.
+    def clear_for_document(
+        self, *, user_id: uuid.UUID, document_id: uuid.UUID
+    ) -> int:
+        if self._client is None:
+            return 0
+        pattern = build_document_cache_pattern(user_id, document_id)
+        deleted = 0
+        try:
+            for key in self._client.scan_iter(match=pattern):
+                self._client.delete(key)
+                deleted += 1
+            if deleted:
+                logger.info(
+                    "Redis cache cleared %s key(s) for user=%s document=%s",
+                    deleted,
+                    user_id,
+                    document_id,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Redis cache clear failed (%s); DB history was still cleared", exc
+            )
+            return 0
+        return deleted

@@ -17,6 +17,8 @@ Two toggles (`true` in `.env.example`; code defaults `false` without `.env`):
 - Key: `rag:answer:{user_id}:{document_id}:{sha256(normalized_question)}`  
 - Value: `{answer, sources}`, TTL default 3600s  
 - Miss or error → full RAG path  
+- Insufficient-context answers are **not** cached  
+- **Clear chat history** removes all cache keys for that user + document  
 
 **2. Rate limit** (`ENABLE_RATE_LIMIT`) — `ChatRateLimiter` on ask routes only
 
@@ -29,7 +31,7 @@ Both fail-open via `redis_client.py`.
 
 | Good | Bad |
 | ---- | --- |
-| Nice cache demo; basic cost guard | Cache only expires by TTL — not cleared when document chunks change |
+| Nice cache demo; basic cost guard | Cache not auto-invalidated on chunk re-ingest — use Clear history or TTL |
 | Optional — not required for correctness | Not production-grade rate limiting |
 
 ## Future

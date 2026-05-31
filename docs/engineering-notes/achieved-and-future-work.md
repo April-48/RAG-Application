@@ -17,6 +17,8 @@ For a fuller scaling write-up, see [system design](../system_design.md#scalabili
 **Extras I added on top**
 
 - Hybrid RAG (query router + pgvector)
+- RAG quality pass: text cleanup at ingest, grounded-but-flexible prompts, retrieval logging, configurable top-k / similarity threshold
+- Clear chat history (Postgres messages + Redis cache for that document)
 - Optional Redis cache and chat rate limit
 - Rename documents, search list, open original file, `?doc=` deep link
 - Owner-only access (other users get 404)
@@ -61,6 +63,7 @@ I would tackle those four areas before things like OCR or multi-document search.
 
 ## Related docs
 
+- [RAG pipeline](../rag_pipeline.md) — retrieval, prompts, debugging
 - [System design](../system_design.md)
 - [Known limitations](known-limitations.md)
 - [ADRs](../adr/)

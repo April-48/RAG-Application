@@ -49,9 +49,75 @@ def test_prompt_builder_includes_context_and_question() -> None:
 
     assert messages[0]["role"] == "system"
     user_content = messages[1]["content"]
-    assert "Context:" in user_content
+    assert "Document context:" in user_content
     assert "refund policy" in user_content
     assert f"Question: {question}" in user_content
+    assert "Synthesize" in user_content or "synthesize" in messages[0]["content"].lower()
+
+
+def test_filter_usable_chunks_drops_empty_and_short() -> None:
+    import uuid
+
+    from app.rag.prompt_builder import filter_usable_chunks
+
+    doc_id = uuid.uuid4()
+    chunks = [
+        DocumentChunk(
+            id=uuid.uuid4(),
+            document_id=doc_id,
+            chunk_index=0,
+            page_number=1,
+            chunk_text="   ",
+            embedding=None,
+        ),
+        DocumentChunk(
+            id=uuid.uuid4(),
+            document_id=doc_id,
+            chunk_index=1,
+            page_number=1,
+            chunk_text="Too short",
+            embedding=None,
+        ),
+        DocumentChunk(
+            id=uuid.uuid4(),
+            document_id=doc_id,
+            chunk_index=2,
+            page_number=2,
+            chunk_text="This chunk has enough usable text for retrieval.",
+            embedding=None,
+        ),
+    ]
+    usable = filter_usable_chunks(chunks)
+    assert len(usable) == 1
+    assert usable[0].chunk_index == 2
+
+
+def test_text_cleanup_removes_boilerplate_and_blank_lines() -> None:
+    from app.rag.text_cleanup import clean_page_text, clean_pages
+    from app.rag.pdf_parser import PageText
+
+    raw = (
+        "Introduction\n\n\n"
+        "This paper studies retrieval quality.\n\n"
+        "Proceedings of the Example Conference\n"
+        "© 2024 All rights reserved\n"
+    )
+    cleaned = clean_page_text(raw)
+    assert "Introduction" in cleaned
+    assert "retrieval quality" in cleaned
+    assert "Proceedings" not in cleaned
+    assert "All rights reserved" not in cleaned
+    assert "\n\n\n" not in cleaned
+
+    pages = [
+        PageText(page_number=1, text="Header Line Repeated Here\nBody one."),
+        PageText(page_number=2, text="Header Line Repeated Here\nBody two."),
+        PageText(page_number=3, text="Header Line Repeated Here\nBody three."),
+    ]
+    deduped = clean_pages(pages)
+    assert len(deduped) == 3
+    assert all("Header Line Repeated Here" not in page.text for page in deduped)
+    assert all("Body" in page.text for page in deduped)
 
 
 def test_loader_rejects_unsupported_extension() -> None:

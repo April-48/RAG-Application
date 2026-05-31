@@ -7,8 +7,10 @@ History is one session per (user, document).
 
 from __future__ import annotations
 
+import logging
 import uuid
 from collections.abc import Iterator
+from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy.orm import Session
@@ -20,12 +22,20 @@ from app.models.message import Message
 from app.rag.embedding_service import Embedder
 from app.rag.llm_service import LLM
 from app.rag.pipeline import RAGPipeline
-from app.rag.prompt_builder import INSUFFICIENT_CONTEXT_MESSAGE
+from app.rag.prompt_builder import INSUFFICIENT_CONTEXT_MESSAGE, is_insufficient_context_answer
 from app.repositories.chat_repository import ChatRepository
 from app.services.document_service import DocumentService
 
 # Shape of one cited chunk in sources_json and Redis cache.
 Source = dict[str, Any]
+
+logger = logging.getLogger("app.services.chat_service")
+
+
+@dataclass(frozen=True)
+class ClearHistoryResult:
+    deleted: int
+    cache_cleared: int
 
 
 # Serialize a chunk to the source shape I store in cache and sources_json.
@@ -90,6 +100,12 @@ class ChatService:
         if cached is not None:
             answer = cached["answer"]
             sources = cached.get("sources", [])
+            logger.info(
+                "Answer path=cache document_id=%s question=%r sources=%s",
+                document_id,
+                question[:120],
+                len(sources),
+            )
             self.chats.add_message(
                 session_id=session_id,
                 role="assistant",
@@ -100,6 +116,11 @@ class ChatService:
 
         result = self.pipeline.retrieve(document_id, question)
         if result.skip_llm_message:
+            logger.info(
+                "Answer path=skip_llm document_id=%s route=%s",
+                document_id,
+                result.routed.mode.value,
+            )
             self.chats.add_message(
                 session_id=session_id,
                 role="assistant",
@@ -109,6 +130,11 @@ class ChatService:
             return result.skip_llm_message, [_chunk_to_source(c) for c in result.chunks]
 
         if not result.chunks:
+            logger.info(
+                "Answer path=insufficient_guard document_id=%s route=%s reason=no_chunks",
+                document_id,
+                result.routed.mode.value,
+            )
             self.chats.add_message(
                 session_id=session_id,
                 role="assistant",
@@ -117,7 +143,17 @@ class ChatService:
             )
             return INSUFFICIENT_CONTEXT_MESSAGE, []
 
-        answer = self.pipeline.generate(question, result)
+        answer = self.pipeline.generate(
+            question, result, document_id=document_id
+        )
+        if not answer.strip():
+            logger.info(
+                "Answer path=insufficient_guard document_id=%s route=%s reason=empty_llm_output",
+                document_id,
+                result.routed.mode.value,
+            )
+            answer = INSUFFICIENT_CONTEXT_MESSAGE
+
         sources = [_chunk_to_source(c) for c in result.chunks]
 
         self.chats.add_message(
@@ -126,14 +162,21 @@ class ChatService:
             content=answer,
             sources_json=sources,
         )
-        # Only cache real answers, not "insufficient context" style errors.
-        self.cache.set(
-            user_id=user_id,
-            document_id=document_id,
-            question=question,
-            answer=answer,
-            sources=sources,
-        )
+        if not is_insufficient_context_answer(answer):
+            self.cache.set(
+                user_id=user_id,
+                document_id=document_id,
+                question=question,
+                answer=answer,
+                sources=sources,
+            )
+        elif sources:
+            logger.warning(
+                "Insufficient-context answer with %s sources document_id=%s question=%r",
+                len(sources),
+                document_id,
+                question[:120],
+            )
         return answer, sources
 
     # Stream SSE-style events: token chunks, then sources, then done.
@@ -154,6 +197,12 @@ class ChatService:
             if cached is not None:
                 answer = cached["answer"]
                 sources = cached.get("sources", [])
+                logger.info(
+                    "Answer path=cache document_id=%s question=%r sources=%s",
+                    document_id,
+                    question[:120],
+                    len(sources),
+                )
                 self.chats.add_message(
                     session_id=session_id,
                     role="assistant",
@@ -167,6 +216,11 @@ class ChatService:
 
             result = self.pipeline.retrieve(document_id, question)
             if result.skip_llm_message:
+                logger.info(
+                    "Answer path=skip_llm document_id=%s route=%s",
+                    document_id,
+                    result.routed.mode.value,
+                )
                 self.chats.add_message(
                     session_id=session_id,
                     role="assistant",
@@ -182,6 +236,11 @@ class ChatService:
                 return
 
             if not result.chunks:
+                logger.info(
+                    "Answer path=insufficient_guard document_id=%s route=%s reason=no_chunks",
+                    document_id,
+                    result.routed.mode.value,
+                )
                 self.chats.add_message(
                     session_id=session_id,
                     role="assistant",
@@ -194,11 +253,22 @@ class ChatService:
                 return
 
             parts: list[str] = []
-            for token in self.pipeline.generate_stream(question, result):
+            for token in self.pipeline.generate_stream(
+                question, result, document_id=document_id
+            ):
                 parts.append(token)
                 yield {"type": "token", "data": token}
 
             answer = "".join(parts).strip()
+            if not answer:
+                logger.info(
+                    "Answer path=insufficient_guard document_id=%s route=%s reason=empty_llm_output",
+                    document_id,
+                    result.routed.mode.value,
+                )
+                answer = INSUFFICIENT_CONTEXT_MESSAGE
+                yield {"type": "token", "data": answer}
+
             sources = [_chunk_to_source(c) for c in result.chunks]
             self.chats.add_message(
                 session_id=session_id,
@@ -206,14 +276,21 @@ class ChatService:
                 content=answer,
                 sources_json=sources,
             )
-            # Cache write only after we got a full successful stream.
-            self.cache.set(
-                user_id=user_id,
-                document_id=document_id,
-                question=question,
-                answer=answer,
-                sources=sources,
-            )
+            if not is_insufficient_context_answer(answer):
+                self.cache.set(
+                    user_id=user_id,
+                    document_id=document_id,
+                    question=question,
+                    answer=answer,
+                    sources=sources,
+                )
+            elif sources:
+                logger.warning(
+                    "Insufficient-context answer with %s sources document_id=%s question=%r",
+                    len(sources),
+                    document_id,
+                    question[:120],
+                )
             yield {"type": "sources", "data": sources}
             yield {"type": "done"}
 
@@ -232,3 +309,21 @@ class ChatService:
         if session is None:
             return []
         return self.chats.list_messages(session.id)
+
+    # Remove all saved messages for this user + document.
+    # Also clears Redis answer cache entries for the same pair when cache is on.
+    # Raises DocumentNotFoundError when the user cannot access the document.
+    def clear_history(
+        self, *, user_id: uuid.UUID, document_id: uuid.UUID
+    ) -> ClearHistoryResult:
+        self.documents.get_accessible_document(document_id, user_id)
+        session = self.chats.get_session(
+            user_id=user_id, document_id=document_id
+        )
+        deleted = 0
+        if session is not None:
+            deleted = self.chats.clear_messages(session.id)
+        cache_cleared = self.cache.clear_for_document(
+            user_id=user_id, document_id=document_id
+        )
+        return ClearHistoryResult(deleted=deleted, cache_cleared=cache_cleared)

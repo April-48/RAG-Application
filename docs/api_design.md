@@ -99,6 +99,7 @@ Chat is scoped to one document at a time. Every route takes a `{document_id}`. T
 | POST   | `/chat/{document_id}/ask`        | Yes  | Yes*       | One-shot answer + sources |
 | POST   | `/chat/{document_id}/ask/stream` | Yes  | Yes*       | SSE stream               |
 | GET    | `/chat/{document_id}/history`    | Yes  | No         | Chat history             |
+| DELETE | `/chat/{document_id}/history`    | Yes  | No         | Clear chat history       |
 
 \* Rate limit applies when `ENABLE_RATE_LIMIT=true` (default in `.env.example`). Returns `429` when exceeded. If Redis is unavailable, the rate limit is skipped and the request goes through.
 
@@ -146,7 +147,9 @@ If the LLM fails during streaming:
 { "type": "error", "data": "The language model is unavailable" }
 ```
 
-For hybrid retrieval, some questions skip the LLM (direct extraction or weak evidence). Those still use the same event shape: `token` → `sources` → `done`.
+For hybrid retrieval, some questions skip the LLM (direct extraction or weak evidence when threshold enforcement is on). Those still use the same event shape: `token` → `sources` → `done`.
+
+**Insufficient-context behavior:** returned when no chunks are retrieved, all chunks are empty/unusable, or the LLM determines context has no relevant information. If the UI shows useful sources but the answer is insufficient-context, see [rag_pipeline.md](rag_pipeline.md#debugging-insufficient-context-answers).
 
 **GET `/chat/{document_id}/history`**
 
@@ -172,6 +175,21 @@ For hybrid retrieval, some questions skip the LLM (direct extraction or weak evi
 ]
 ```
 
+**DELETE `/chat/{document_id}/history`**
+
+Clears all saved messages for this user + document. Also removes Redis answer-cache entries for the same pair when cache is enabled.
+
+```json
+// response 200
+{ "deleted": 4, "cache_cleared": 2 }
+```
+
+- `deleted` — message rows removed from Postgres (0 if no session yet)
+- `cache_cleared` — Redis keys removed (0 when cache is off or Redis is down)
+- `404` — document missing or not owned by you
+
+Uploaded files and vector chunks are **not** deleted.
+
 ## Health
 
 | Method | Path      | Auth | Description  |
@@ -185,5 +203,6 @@ For hybrid retrieval, some questions skip the LLM (direct extraction or weak evi
 
 ## Related docs
 
+- [`rag_pipeline.md`](rag_pipeline.md) — ingest, retrieval, prompts, debugging
 - [`setup.md`](setup.md) — how to run the app locally
 - [`system_design.md`](system_design.md) — architecture, hybrid retrieval, data flows

@@ -8,7 +8,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from app.models.chat_session import ChatSession
@@ -79,3 +79,18 @@ class ChatRepository:
                 .order_by(Message.created_at.asc())
             )
         )
+
+    # Delete every message in a session — DELETE /history.
+    # Output: number of rows removed (0 when the session had no messages).
+    def clear_messages(self, session_id: uuid.UUID) -> int:
+        count = self.db.scalar(
+            select(func.count())
+            .select_from(Message)
+            .where(Message.session_id == session_id)
+        )
+        deleted = int(count or 0)
+        if deleted == 0:
+            return 0
+        self.db.execute(delete(Message).where(Message.session_id == session_id))
+        self.db.commit()
+        return deleted

@@ -11,6 +11,7 @@ import { documentApi } from "../api/documentApi";
 import { ApiError } from "../api/client";
 
 import ChatBox from "../components/ChatBox";
+import ConfirmDialog from "../components/ConfirmDialog";
 import DocumentSearchInput from "../components/DocumentSearchInput";
 import SourcePanel from "../components/SourcePanel";
 import { useChat } from "../hooks/useChat";
@@ -177,9 +178,10 @@ function ChatSession({
   onOpenSources: () => void;
   onCloseSources: () => void;
 }) {
-  const { messages, busy, error, rateLimitWarning, loadingHistory, send } =
+  const { messages, busy, error, rateLimitWarning, loadingHistory, clearingHistory, send, clearHistory } =
     useChat(documentId);
   const [pinnedSources, setPinnedSources] = useState<Source[] | null>(null);
+  const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [openingFile, setOpeningFile] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
 
@@ -199,6 +201,18 @@ function ChatSession({
   const handleSend = (question: string) => {
     setPinnedSources(null);
     void send(question);
+  };
+
+  /** Open the clear-history confirmation modal. */
+  const handleClearHistoryClick = () => {
+    setShowClearConfirm(true);
+  };
+
+  /** Clear chat history after the user confirms in the modal. */
+  const confirmClearHistory = async () => {
+    setPinnedSources(null);
+    const ok = await clearHistory();
+    if (ok) setShowClearConfirm(false);
   };
 
   /** Open the original file for the selected document. */
@@ -228,7 +242,9 @@ function ChatSession({
         error={error}
         rateLimitWarning={rateLimitWarning}
         loadingHistory={loadingHistory}
+        clearingHistory={clearingHistory}
         onSend={handleSend}
+        onClearHistory={handleClearHistoryClick}
         documentTitle={documentLabel(selectedDoc)}
         onOpenOriginalFile={() => void handleOpenOriginalFile()}
         openingFile={openingFile}
@@ -244,6 +260,19 @@ function ChatSession({
       />
       {showSources && (
         <SourcePanel sources={activeSources} onClose={onCloseSources} />
+      )}
+      {showClearConfirm && (
+        <ConfirmDialog
+          title="Clear chat history"
+          message={`Clear all messages for "${documentLabel(selectedDoc)}"? Cached answers for this document will also be removed. Your uploaded file is not deleted.`}
+          confirmLabel="Clear history"
+          busyLabel="Clearing…"
+          busy={clearingHistory}
+          onCancel={() => {
+            if (!clearingHistory) setShowClearConfirm(false);
+          }}
+          onConfirm={() => void confirmClearHistory()}
+        />
       )}
     </div>
   );

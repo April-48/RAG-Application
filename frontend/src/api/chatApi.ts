@@ -26,6 +26,12 @@ export const chatApi = {
   history: (documentId: string): Promise<MessageRecord[]> =>
     apiRequest<MessageRecord[]>(`/chat/${documentId}/history`),
 
+  /** Delete all saved messages for a document. */
+  clearHistory: (documentId: string): Promise<{ deleted: number; cache_cleared: number }> =>
+    apiRequest<{ deleted: number; cache_cleared: number }>(`/chat/${documentId}/history`, {
+      method: "DELETE",
+    }),
+
   /** Stream answer tokens over SSE and fire handlers as chunks arrive. */
   askStream: async (
     documentId: string,
