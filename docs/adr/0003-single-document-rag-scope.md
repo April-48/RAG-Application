@@ -1,4 +1,4 @@
-# ADR 0003: Single-document RAG scope for the MVP
+# ADR 0003: Single-document RAG scope
 
 ## Status
 
@@ -6,58 +6,50 @@ Accepted (MVP)
 
 ## Context
 
-RAG products can answer against **one selected document**, a **folder**, or **everything the user uploaded**. Each choice changes retrieval filters, cache key design, chat session modeling, UI, and how you explain citations in a demo.
+RAG apps can answer about one file, a folder, or everything a user uploaded. Each choice changes retrieval, cache keys, chat sessions, and the UI.
 
-For this MVP we prioritized a clear homework narrative: upload a file, wait until it is `ready`, select it in chat, ask questions grounded in that file, and show source chunks. Multi-document search is useful later but expands scope quickly.
+For this homework I focused on a simple story: upload one file, wait until `ready`, pick it in chat, ask questions, show source chunks. Multi-document search adds a lot of scope.
 
 ## Decision
 
-**MVP chat is scoped to one selected document per chat session.**
+**MVP chat is scoped to one document per session.**
 
-Concrete behavior in the codebase:
+In the code:
 
-- Each `ChatSession` is tied to one `(user_id, document_id)` pair.
-- Retrieval embeds the question and searches pgvector **only within that `document_id`** (`ChunkRepository.search_by_document`).
-- Redis cache keys include `user_id` and `document_id`:  
-  `rag:answer:{user_id}:{document_id}:{sha256(normalized_question)}`.
-- API routes are document-scoped: `POST /chat/{document_id}/ask`, `/ask/stream`, `GET /history`.
-- UI: user picks a ready document in the chat sidebar; deep link `?doc=<uuid>` selects it on load.
+- Each `ChatSession` links one `user_id` and one `document_id`.
+- Retrieval searches pgvector **only inside that document**.
+- Redis cache keys include both ids:  
+  `rag:answer:{user_id}:{document_id}:{sha256(normalized_question)}`
+- API routes: `POST /chat/{document_id}/ask`, `/ask/stream`, `GET /history`
+- UI: user picks a ready document; `?doc=<uuid>` deep links
 
-**Multi-document Q&A is explicitly out of scope** for the MVP (deferred to future work in `system_design.md`).
+**Multi-document Q&A is out of scope** for the MVP (see system design future work).
 
-## Alternatives Considered
+The `document_permissions` table exists in the schema, but **only owner access is implemented**. Unauthorized access returns `404`.
 
-| Alternative | Why deferred |
-| ----------- | ------------ |
-| Search all of a user’s documents by default | Harder to explain wrong citations; retrieval and cache keys must represent a document set. |
-| Collection / folder scoped retrieval | Needs a collection model and UI we did not build. |
-| Global corpus without a picker | Simpler UI but weak “grounded in this upload” story for grading and demos. |
+## Alternatives considered
 
-## Rationale
+| Option | Why deferred |
+| ------ | ------------ |
+| Search all user docs by default | Harder citations; cache keys need a doc set |
+| Folder/collection scope | Needs new models and UI |
+| No document picker | Weak “grounded in this upload” demo story |
 
-- **Correctness and security:** If the user passes owner checks for a `document_id`, every retrieved chunk belongs to that document. Cross-document leakage is a smaller risk than multi-doc search across many ids.
-- **Stable cache keys:** One document id per session keeps Redis entries predictable and aligned with ADR 0005.
-- **Demo clarity:** The Source panel maps directly to one file; page numbers (PDF) and chunk text are easy to walk through in an interview.
-- **Incremental path:** The pipeline already takes `document_id` as a parameter. Expanding scope later mainly touches retrieval filter, session model, cache fingerprint, and UI — not a full rewrite.
+## Why this works
 
-Sharing: the **`document_permissions`** table exists in the schema, but **owner-only access is what the app implements today** (`get_owned`, same 404 for missing vs unauthorized). Shared read access is not wired through routes or retrieval.
+- Easier to keep retrieval and security correct.
+- Cache keys stay simple (ADR 0005).
+- Source panel maps cleanly to one file in demos.
+- Pipeline already takes `document_id` — expanding later is localized.
 
-## Consequences
+## Limits
 
-**Benefits**
+- Cannot compare two uploads in one chat session.
+- No “search my whole library” mode.
+- Sharing is not wired despite the permissions table.
 
-- Straightforward end-to-end demo: Dashboard upload → Chat on that doc → citations.
-- Simpler API and mental model for homework reviewers.
-- Easier to reason about access control in interviews.
+## Future improvements
 
-**Limitations**
-
-- Users cannot ask one question that compares or synthesizes across two uploads in a single chat session.
-- Research-style “search my whole library” is not available.
-- Document sharing remains future work despite the permissions table stub.
-
-## Future Improvements
-
-- **Multi-document retrieval:** search across a stable document set (still owner-scoped), with cache keys based on a hash of sorted document ids.
-- **Wire up `document_permissions`** for read-only sharing — requires authorization checks in services and retrieval, not just schema.
-- UI to select one vs many documents when scope expands.
+- Multi-document retrieval with cache keys based on a hash of document ids.
+- Wire up `document_permissions` for read-only sharing.
+- UI to pick one vs many documents.

@@ -1,59 +1,67 @@
 # Backend (core logic layer)
 
-All reusable business logic lives here: database models, repositories, services,
-the RAG pipeline, storage, and (future) workers. The middleware calls into this
-layer; this layer never deals with HTTP.
+This folder holds the main business logic: database models, repositories, services, the RAG pipeline, storage, cache, and ingestion workers. The middleware API calls into this layer. This layer does not handle HTTP directly.
 
 ## Structure
 
 ```
 app/
 ├── core/
-│   └── config.py          # Settings from environment
+│   ├── config.py          # Settings from environment
+│   ├── exceptions.py      # Domain errors
+│   └── security.py        # Password hashing
 ├── db/
-│   ├── base.py            # SQLAlchemy declarative base
-│   └── session.py         # Engine + session factory (Postgres + pgvector)
-├── models/                # ORM models
-│   ├── user.py            # User (owns documents)
-│   ├── document.py        # Document (owner_id)
-│   └── chunk.py           # DocumentChunk (text + pgvector embedding)
-├── repositories/          # Data access (owner-scoped queries)
+│   ├── base.py            # SQLAlchemy base
+│   └── database.py        # Engine + session (Postgres + pgvector)
+├── models/
+│   ├── user.py
+│   ├── document.py
+│   ├── chunk.py           # text + pgvector embedding
+│   ├── chat_session.py
+│   ├── message.py
+│   └── document_permission.py  # schema only; unused in MVP
+├── repositories/          # DB access (owner-scoped queries)
 │   ├── user_repository.py
 │   ├── document_repository.py
-│   └── chunk_repository.py
-├── services/              # Business logic / orchestration
+│   ├── chunk_repository.py
+│   └── chat_repository.py
+├── services/
 │   ├── auth_service.py
 │   ├── document_service.py
 │   └── chat_service.py
-├── rag/                   # RAG pipeline stages
-│   ├── loader.py          # Text extraction
-│   ├── chunker.py         # Text splitting
-│   ├── embedder.py        # Embedding generation
-│   ├── retriever.py       # Scoped vector search
-│   ├── generator.py       # LLM answer generation
-│   └── pipeline.py        # Stage orchestration
-├── storage/               # File storage backends (code)
-│   ├── base.py            # Storage interface
-│   └── local.py           # writes to ../storage/uploads/{user_id}/{document_id}/
-└── workers/               # Future async workers
-    └── ingestion_worker.py
+├── rag/
+│   ├── loader.py          # PDF / TXT / DOCX text extraction
+│   ├── text_splitter.py   # Chunking
+│   ├── embedding_service.py
+│   ├── query_router.py    # Hybrid retrieval mode picker
+│   ├── retrieval_service.py
+│   ├── prompt_builder.py
+│   ├── llm_service.py
+│   └── pipeline.py        # Wires the stages together
+├── cache/
+│   ├── answer_cache.py    # Redis answer cache
+│   ├── rate_limiter.py    # Chat rate limit
+│   └── redis_client.py
+├── storage/
+│   ├── base.py            # StorageBackend interface
+│   └── local_storage.py   # Local disk backend
+└── workers/
+    └── ingestion_worker.py  # BackgroundTasks entrypoint
 
-storage/                   # Runtime data (sibling to app/, not a Python package)
-└── uploads/               # Uploaded files: uploads/{user_id}/{document_id}/
+alembic/                   # Database migrations
+tests/                     # pytest suite (48 tests)
+storage/                   # Runtime uploads (not a Python package)
+└── uploads/               # {user_id}/{document_id}/<file>
 ```
 
 ## Design principles
 
-- **Ownership-first access control** — every document has an `owner_id`; repositories
-  expose only owner-scoped queries.
-- **Scoped retrieval** — vector search always filters by `document_id` and the
-  authorized user.
-- **Layering** — routes → services → repositories → DB. Each layer depends only on
-  the one below it.
-- **Swappable modules** — storage backends, embedding/LLM providers, and chunking
-  strategies sit behind interfaces so they can change in isolation.
+- **Owner checks first** — every document has an `owner_id`; repositories only expose owner-scoped queries.
+- **Scoped retrieval** — `query_router` + `RetrievalService`; vector search always filters by `document_id`.
+- **Layering** — routes → services → repositories → DB.
+- **Swappable parts** — storage, embeddings, LLM, and chunking sit behind interfaces so they can be swapped later.
 
-## Layout of stored files
+## Where uploaded files go
 
 ```
 backend/storage/uploads/
@@ -64,6 +72,6 @@ backend/storage/uploads/
 
 ## Related docs
 
-- [`docs/setup.md`](../docs/setup.md) — local setup (migrations, env, Docker)
-- [`docs/system_design.md`](../docs/system_design.md) — RAG flows and data model
-- [`docs/adr/`](../docs/adr/) — architecture decisions
+- [Setup guide](../docs/setup.md)
+- [System design](../docs/system_design.md) — RAG flows and hybrid retrieval
+- [ADRs](../docs/adr/)

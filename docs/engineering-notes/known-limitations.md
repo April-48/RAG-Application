@@ -1,63 +1,83 @@
 # Known limitations
 
-This file documents the main MVP limitations so they are clear during demos and grading. The app is a homework-scale project with scalability-aware design — not a fully production-hardened system.
+This file lists the main MVP limits so they are clear during demos and grading. This is a homework-scale project — not a production-ready system.
 
-For what **is** implemented and how it scales in production, see [achieved-and-future-work.md](achieved-and-future-work.md) and [system design](../system_design.md).
+For what **is** built and how it could scale later, see [achieved-and-future-work.md](achieved-and-future-work.md) and [system design](../system_design.md).
 
 ---
 
 ## Single-document RAG only
 
-Chat is scoped to **one selected document per session**. Retrieval, cache keys, and the UI assume one `document_id`. There is no “search across all my uploads” mode in the MVP.
+Chat works on **one selected document at a time**. Retrieval, cache keys, and the UI all assume one `document_id`. There is no “search all my uploads” mode in the MVP.
 
 ---
 
-## BackgroundTasks are not a durable queue
+## BackgroundTasks is not a real queue
 
-Ingestion uses FastAPI `BackgroundTasks` in the API process. If the server restarts during `processing`, work may be lost or status may stall. There is no retry queue, no dead-letter handling, and no horizontal worker scaling.
+Ingestion uses FastAPI `BackgroundTasks` inside the API process. If the server restarts while a document is `processing`, the job may be lost or the status may get stuck. There is no retry queue or worker scaling.
 
 Future direction: Redis + Celery/RQ (see ADR 0004).
 
 ---
 
-## Local storage is development-only
+## Local storage is for development
 
-Files live under `backend/storage/uploads/` on disk. This is fine for laptops and local Docker demos. It is **not** suitable for multi-instance deployment without object storage or a shared volume.
+Files live under `backend/storage/uploads/` on disk. That is fine for local demos. It does **not** work well if you run multiple API servers without shared storage.
 
-Future direction: S3-compatible backend behind `StorageBackend` (see ADR 0007).
-
----
-
-## Scanned PDFs unsupported without OCR
-
-Only text extracted from PDF text layers is indexed. Camera scans and image-only pages produce little or no text, which leads to weak or empty retrieval. OCR is future work.
+Future direction: S3-style backend behind `StorageBackend` (see ADR 0007).
 
 ---
 
-## DOCX extraction is basic
+## Scanned PDFs need OCR (not built)
 
-python-docx reads paragraphs and simple tables. Complex layouts, headers/footers, embedded images, and legacy `.doc` are not supported. Use `.docx`, not `.doc`.
-
----
-
-## Embedding dimension is fixed to the current provider
-
-The database column dimension must match the active embedder (384 for local MiniLM by default, 1536 for OpenAI). Switching providers requires a migration and **re-ingesting** all documents. Mixed dimensions in one database are not supported.
+We only read text from PDF text layers. Camera scans and image-only pages give little or no text, so retrieval is weak or empty.
 
 ---
 
-## Shared document permissions are future work
+## DOCX parsing is basic
 
-Migration `0001_initial` creates a `document_permissions` table, but **routes and UI do not use it**. Access is **owner-only** today; unauthorized access returns the same `404` as a missing document to avoid leaking existence.
+python-docx reads paragraphs and simple tables. Complex layouts, headers/footers, embedded images, and old `.doc` files are not supported. Use `.docx`.
+
+---
+
+## Embedding size is tied to the provider
+
+The database column size must match the embedder (384 for local MiniLM by default, 1536 for OpenAI). Switching providers needs a migration and **re-ingesting** all documents. You cannot mix different vector sizes in one database.
+
+---
+
+## Document sharing is not wired up
+
+Migration `0001_initial` creates a `document_permissions` table, but **routes and UI do not use it**. Access is owner-only today. Unauthorized access returns the same `404` as a missing document.
+
+---
+
+## Hybrid query routing is rule-based
+
+Before the LLM runs, a **query router** picks a retrieval mode based on simple phrase rules:
+
+- document beginning / ending
+- page lookup
+- section lookup
+- summary
+- semantic pgvector search (default)
+
+This helps with demo-style questions, but it has limits:
+
+- Unusual wording may not match the rules and falls back to semantic search.
+- **Page lookup** needs page metadata from PDF/DOCX. Plain TXT has no pages.
+- **Section lookup** matches headings with simple rules — odd headings may miss.
+- **Semantic mode** rejects weak matches below `RETRIEVAL_MIN_SIMILARITY` (default 0.32).
+- Summary mode picks a subset of chunks, not the full document text.
 
 ---
 
 ## Other MVP gaps
 
-- **Redis chat rate limiting** is implemented as an optional, fail-open MVP feature. It can be enabled through environment configuration (`ENABLE_RATE_LIMIT=true`), but it is not intended as a full production-grade abuse-prevention system yet.
+- **Redis chat rate limiting** is optional and fail-open. It is not real abuse prevention.
 - No monitoring or audit logs yet.
-- Redis answer cache is not invalidated on re-ingest — stale answers are possible until TTL.
-- No automated OCR, virus scan, or content moderation on uploads.
-- Chat deep links (`?doc=`) work for selecting a ready document, but edge cases such as a deleted document or lost access could use clearer UI handling.
+- Redis answer cache is not cleared on re-ingest — stale answers are possible until TTL.
+- No OCR, virus scan, or content moderation on uploads.
+- Chat deep links (`?doc=`) work for ready documents, but deleted or inaccessible docs could use clearer UI messages.
 
-For architecture context see [`../system_design.md`](../system_design.md) and the ADRs in [`../adr/`](../adr/).
+For more context see [system design](../system_design.md) and the [ADRs](../adr/).
