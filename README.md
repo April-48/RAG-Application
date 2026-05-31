@@ -164,4 +164,4 @@ This is an MVP, not a production RAG platform.
 
 ## Future improvements
 
-How I would scale this (workers, object storage, load-balanced API, vector search) is in [System Design](docs/system_design.md#future-scalability-focus).
+How I would scale this (workers, object storage, load-balanced API, vector search, and a cloud path via Supabase/S3/managed Redis) is in [System Design](docs/system_design.md#future-scalability-focus).
