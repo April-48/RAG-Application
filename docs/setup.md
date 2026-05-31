@@ -49,6 +49,7 @@ Edit `.env` and set `OPENAI_API_KEY` if you want real LLM answers. For Compose, 
 chmod +x scripts/docker_setup.sh scripts/docker_start.sh scripts/docker_stop.sh
 ./scripts/docker_setup.sh    # first time: build, start, migrate
 ./scripts/docker_start.sh    # later restarts
+./scripts/docker_start.sh --build  # after backend/RAG code changes
 ./scripts/docker_stop.sh     # stop (keeps volumes)
 ```
 
@@ -110,11 +111,12 @@ Use this if you run uvicorn and Vite on your machine, with only Postgres and Red
 | ------ | ------- |
 | `scripts/docker_setup.sh` | Full stack in Docker |
 | `scripts/docker_start.sh` | Restart Docker stack |
+| `scripts/docker_start.sh --build` | Rebuild middleware after backend code changes |
 | `scripts/docker_stop.sh` | Stop Docker (keep volumes) |
 | `scripts/dev_setup.sh` | Host dev: db/redis in Docker, install deps, migrate |
 | `scripts/dev_start.sh` | Run uvicorn on :8000 |
 
-`dev_setup.sh` sets `DATABASE_URL` / `REDIS_URL` to **localhost**. `docker_setup.sh` uses **db** / **redis** service names.
+See [scripts/README.md](../scripts/README.md). `dev_setup.sh` sets `DATABASE_URL` / `REDIS_URL` to **localhost**. `docker_setup.sh` uses **db** / **redis** service names.
 
 ### Prerequisites
 

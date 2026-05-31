@@ -68,6 +68,7 @@ This keeps local setup simple while still showing clear boundaries for interview
 chmod +x scripts/docker_setup.sh scripts/docker_start.sh
 ./scripts/docker_setup.sh          # first time: build, start, migrate
 ./scripts/docker_start.sh          # later restarts
+./scripts/docker_start.sh --build  # after backend/RAG code changes (Docker mode)
 ```
 
 Or manually:

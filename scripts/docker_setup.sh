@@ -13,6 +13,8 @@ cd "$ROOT"
 
 # shellcheck source=scripts/lib/env_urls.sh
 source "$ROOT/scripts/lib/env_urls.sh"
+# shellcheck source=scripts/lib/docker_common.sh
+source "$ROOT/scripts/lib/docker_common.sh"
 
 echo "==> RAG Application — Docker full stack setup"
 echo "    Project root: $ROOT"
@@ -59,11 +61,5 @@ docker compose ps
 echo
 echo "==> Docker setup complete!"
 echo
-echo "  Frontend:  http://localhost:5173"
-echo "  API docs:  http://localhost:8000/docs"
-echo "  Health:    http://localhost:8000/health"
-echo
-echo "  Logs:      docker compose logs -f middleware"
-echo "  Stop:      ./scripts/docker_stop.sh"
-echo "  Restart:   ./scripts/docker_start.sh"
+print_docker_setup_footer
 echo
