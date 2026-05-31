@@ -8,10 +8,12 @@ React + Vite + TypeScript + Tailwind. UI only — all data comes from the API.
 src/
 ├── api/         HTTP client
 ├── hooks/       useAuth, useDocuments, useChat
-├── components/  Upload, Chat, Sources, etc.
+├── components/  Upload, Chat, Sources, ConfirmDialog, etc.
 ├── pages/       Login, Dashboard, Chat
 └── App.tsx      routing
 ```
+
+Chat supports SSE streaming, source panel, and **Clear history** (confirmation modal; clears server messages + Redis cache for that document).
 
 Run (API should be on :8000):
 

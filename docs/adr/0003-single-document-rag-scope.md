@@ -12,7 +12,7 @@ RAG can search one file, a folder, or everything. For this project I kept it to 
 
 - One `ChatSession` per (user, document)  
 - Retrieval + Redis cache keys include that `document_id`  
-- Routes: `/chat/{document_id}/ask`, `/ask/stream`, `/history`  
+- Routes: `/chat/{document_id}/ask`, `/ask/stream`, `/history`, `DELETE .../history`  
 - Owner-only access today (`404` for others)
 
 ## Trade-offs

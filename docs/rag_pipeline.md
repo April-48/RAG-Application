@@ -41,7 +41,7 @@ All chunk queries filter by `document_id`. Cross-document leakage is not possibl
 | Mode | Examples | Typical LLM use |
 | ---- | -------- | --------------- |
 | `semantic` | factual content questions | Yes |
-| `whole_document_summary` | summarize this document | Yes |
+| `whole_document_summary` | summarize this document | Yes — up to 6 representative chunks |
 | `page_lookup` | what is on page 3 | Usually yes |
 | `section_lookup` | Methods section | Depends |
 | `document_beginning` / `document_ending` | first sentence, last paragraph | Often direct extraction |
@@ -105,7 +105,14 @@ RETRIEVAL_ENFORCE_SIMILARITY_THRESHOLD=false
 
 LLM_MODEL=gpt-4o-mini
 OPENAI_API_KEY=...
+
+ENABLE_REDIS_CACHE=false
+CACHE_TTL_SECONDS=3600
+ENABLE_RATE_LIMIT=false
+CHAT_RATE_LIMIT_PER_MINUTE=10
 ```
+
+Code defaults above match `config.py`. `.env.example` sets `ENABLE_REDIS_CACHE=true` and `ENABLE_RATE_LIMIT=true` for local demos.
 
 ## Logging
 

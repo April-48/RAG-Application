@@ -15,22 +15,27 @@ For a shorter “what works / what’s missing” list, see [achieved-and-future
 
 ## Layers
 
-```
-┌────────────┐      HTTP/JSON      ┌──────────────┐      function calls      ┌───────────┐
-│  frontend  │  ───────────────▶   │  middleware  │  ─────────────────────▶  │  backend  │
-│ (React UI) │  ◀───────────────   │  (FastAPI)   │  ◀─────────────────────  │  (logic)  │
-└────────────┘                     └──────────────┘                          └─────┬─────┘
-                                                                                   │
-                                                 ┌───────────────┬───────────┴───────────┐
-                                                 │               │                       │
-                                           ┌─────▼─────┐   ┌──────▼──────┐         ┌──────▼──────┐
-                                           │  Postgres │   │ file storage│         │    Redis    │
-                                           │ + pgvector│   │  uploads/   │         │cache/limit  │
-                                           └───────────┘   └─────────────┘         └─────────────┘
-                                                                                         │
-                                                                                   ┌─────▼─────┐
-                                                                                   │    LLM    │
-                                                                                   └───────────┘
+```mermaid
+flowchart LR
+    frontend["frontend<br/>(React UI)"]
+    middleware["middleware<br/>(FastAPI)"]
+    backend["backend<br/>(logic)"]
+
+    postgres["Postgres<br/>+ pgvector"]
+    storage["file storage<br/>uploads/"]
+    redis["Redis<br/>cache/limit"]
+    llm["LLM"]
+
+    frontend -- "HTTP/JSON + SSE" --> middleware
+    middleware -- "HTTP/JSON + SSE" --> frontend
+
+    middleware -- "function calls" --> backend
+    backend -- "responses" --> middleware
+
+    backend --> postgres
+    backend --> storage
+    backend --> redis
+    backend --> llm
 ```
 
 - **frontend/** — React UI only (upload, chat, sources). Calls the API over HTTP/SSE.
@@ -59,12 +64,27 @@ The same Redis service I use for cache and rate limiting could also act as the j
 
 ### Target architecture (not built)
 
-```
-CDN (static frontend) → load balancer → FastAPI (×N)
-                              ↓
-              Postgres+pgvector   Redis   S3
-                              ↓
-                       Celery/RQ workers
+```mermaid
+flowchart TB
+    cdn["CDN<br/>(static frontend)"]
+    lb["Load balancer"]
+    api["FastAPI<br/>(×N)"]
+
+    postgres["Postgres<br/>+ pgvector"]
+    redis["Redis<br/>cache / queue"]
+    s3["S3<br/>object storage"]
+    workers["Celery/RQ<br/>workers"]
+
+    cdn --> lb
+    lb --> api
+
+    api --> postgres
+    api --> redis
+    api --> s3
+
+    redis --> workers
+    workers --> postgres
+    workers --> s3
 ```
 
 More background: ADRs [0004](adr/0004-async-ingestion-backgroundtasks.md)–[0007](adr/0007-local-storage-vs-s3.md).
@@ -111,7 +131,7 @@ Before the LLM, `query_router` picks a mode. This is simple rule-based routing p
 | `document_ending` | last paragraph | Often no |
 | `page_lookup` | what is on page 3 | Usually yes |
 | `section_lookup` | Methods section | Depends |
-| `whole_document_summary` | summarize this document | Yes |
+| `whole_document_summary` | summarize this document | Yes — up to **6** representative chunks |
 | `semantic` (default) | normal factual questions | Yes — top-k chunks go to LLM |
 
 **Semantic search:** query and chunks use the **same** embedder (`EMBEDDING_PROVIDER` / `EMBEDDING_MODEL`). pgvector returns chunks ordered by **ascending cosine distance** (lower = more similar). Default **`RETRIEVAL_TOP_K=8`**.
@@ -128,7 +148,7 @@ Sources shown in the UI come from **retrieved chunks**, not from parsing the LLM
 
 **Cache** (`ENABLE_REDIS_CACHE`): key `rag:answer:{user}:{doc}:{hash(question)}`, TTL 3600s default. Insufficient-context answers are **not** cached. **Clear chat history** (`DELETE /chat/{document_id}/history`) removes Postgres messages and Redis answer keys for that user + document.
 
-**Rate limit** (`ENABLE_RATE_LIMIT`): 10 asks/min per user on chat routes; HTTP 429 if exceeded.
+**Rate limit** (`ENABLE_RATE_LIMIT`): enforced in middleware on **ask** routes only (`/ask`, `/ask/stream`); 10 asks/min per user; HTTP 429 if exceeded. Fail-open if Redis is down.
 
 Both are optional and fail-open.
 

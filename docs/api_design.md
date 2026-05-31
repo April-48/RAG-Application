@@ -82,6 +82,8 @@ Allowed file types: `.pdf`, `.txt`, `.docx`.
 
 Document status flow: `uploaded` → `processing` → `ready` (or `failed`). The upload response comes back immediately. Ingestion runs in the background after that.
 
+**DELETE `/documents/{document_id}`** — returns **`204 No Content`** on success; removes the document row, chunks, and file on disk.
+
 **PATCH `/documents/{document_id}`**
 
 ```json
@@ -101,7 +103,7 @@ Chat is scoped to one document at a time. Every route takes a `{document_id}`. T
 | GET    | `/chat/{document_id}/history`    | Yes  | No         | Chat history             |
 | DELETE | `/chat/{document_id}/history`    | Yes  | No         | Clear chat history       |
 
-\* Rate limit applies when `ENABLE_RATE_LIMIT=true` (default in `.env.example`). Returns `429` when exceeded. If Redis is unavailable, the rate limit is skipped and the request goes through.
+\* Rate limit applies when `ENABLE_RATE_LIMIT=true` (`.env.example` sets `true`; code default is `false` without `.env`). Returns `429` when exceeded. If Redis is unavailable, the rate limit is skipped and the request goes through.
 
 **POST `/chat/{document_id}/ask`**
 
@@ -123,7 +125,7 @@ Chat is scoped to one document at a time. Every route takes a `{document_id}`. T
 
 - `404` — document missing or not owned by you
 - `409` — document is not `ready` yet
-- `502` — LLM is unavailable (for semantic/summary paths)
+- `502` — LLM call failed (when the pipeline reaches the LLM and it errors)
 
 **Sources** come from the retrieval pipeline — not from the LLM reply. Each source has `chunk_index`, optional `page_number`, and `chunk_text`.
 

@@ -39,12 +39,12 @@ class ChunkRepository:
         return len(rows)
 
     # Return top-k nearest chunks for this document only (cosine distance).
-    # Input: document_id, query embedding vector, and optional top_k.
+    # Callers pass settings.retrieval_top_k (default 8); this default is a fallback only.
     def search_by_document(
         self,
         document_id: uuid.UUID,
         query_embedding: list[float],
-        top_k: int = 5,
+        top_k: int = 8,
     ) -> list[DocumentChunk]:
         return [chunk for chunk, _distance in self.search_by_document_with_distance(
             document_id, query_embedding, top_k
@@ -56,7 +56,7 @@ class ChunkRepository:
         self,
         document_id: uuid.UUID,
         query_embedding: list[float],
-        top_k: int = 5,
+        top_k: int = 8,
     ) -> list[tuple[DocumentChunk, float]]:
         distance = DocumentChunk.embedding.cosine_distance(query_embedding).label(
             "distance"

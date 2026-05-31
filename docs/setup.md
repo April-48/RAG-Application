@@ -16,7 +16,7 @@ pip install -e .
 pytest
 ```
 
-There are **48 tests** covering auth, document ownership, hybrid retrieval, Redis cache keys, and mocked chat. Tests do **not** call real LLM or embedding APIs.
+There are **57 tests** covering auth, document ownership, hybrid retrieval, Redis cache keys, clear-history routes, and mocked chat. Tests do **not** call real LLM or embedding APIs.
 
 ### Frontend
 
@@ -152,13 +152,16 @@ cp .env.example .env
 | `RETRIEVAL_TOP_K` | Semantic retrieval | Default **8** chunks |
 | `RETRIEVAL_MIN_SIMILARITY` | Similarity floor when enforcement is on | Default **0.20** |
 | `RETRIEVAL_ENFORCE_SIMILARITY_THRESHOLD` | Pre-filter weak hits before LLM | Default **false** (MVP — LLM decides) |
-
-**RAG tuning and debugging:** [rag_pipeline.md](rag_pipeline.md)
 | `OPENAI_API_KEY` | LLM chat | Required unless you use a local OpenAI-compatible server |
 | `LLM_MODEL` / `LLM_BASE_URL` | LLM config | Default `gpt-4o-mini`; set base URL for OpenRouter/Ollama |
+| `LLM_PROVIDER` | LLM backend kind | Default `openai` (OpenAI-compatible) |
 | `ENABLE_REDIS_CACHE` | Answer cache | `true` in `.env.example`; code defaults to `false` without `.env` |
-| `ENABLE_RATE_LIMIT` | Chat rate limit | On ask routes only; fail-open if Redis is down |
+| `CACHE_TTL_SECONDS` | Redis answer TTL | Default **3600** |
+| `ENABLE_RATE_LIMIT` | Chat rate limit | `true` in `.env.example`; code defaults to `false` without `.env`; ask routes only; fail-open if Redis is down |
+| `CHAT_RATE_LIMIT_PER_MINUTE` | Rate limit cap | Default **10** per user per minute |
 | `UPLOAD_DIR` | Upload folder | Default `backend/storage/uploads` |
+
+**RAG tuning and debugging:** [rag_pipeline.md](rag_pipeline.md). See [`.env.example`](../.env.example) for the full list.
 
 **Postgres in docker-compose.yml:** user `postgres`, password `password`, database `rag_app`. Your `DATABASE_URL` must match.
 

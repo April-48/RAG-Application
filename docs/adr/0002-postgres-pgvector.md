@@ -14,7 +14,7 @@ Postgres 16 + pgvector (Docker service `db`).
 
 - Default: **384-dim** vectors (local MiniLM)  
 - OpenAI **1536** supported in code — needs migration + re-ingest  
-- Semantic search: cosine distance, `document_id` filter, default top-k = 5  
+- Semantic search: cosine distance, `document_id` filter, default top-k = **8** (`RETRIEVAL_TOP_K`)
 - Hybrid retrieval also uses chunk metadata (pages, headings)
 
 ## Trade-offs

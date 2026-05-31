@@ -137,7 +137,7 @@ Layer notes: [frontend](frontend/README.md) · [API layer](middleware/README.md)
 
 ## Testing
 
-**Backend** — **48 pytest tests** (auth, document ownership, hybrid retrieval/query router, Redis cache keys, mocked chat):
+**Backend** — **57 pytest tests** (auth, document ownership, hybrid retrieval/query router, Redis cache keys, clear-history routes, mocked chat):
 
 ```bash
 cd backend

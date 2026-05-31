@@ -20,7 +20,7 @@ Two toggles (`true` in `.env.example`; code defaults `false` without `.env`):
 - Insufficient-context answers are **not** cached  
 - **Clear chat history** removes all cache keys for that user + document  
 
-**2. Rate limit** (`ENABLE_RATE_LIMIT`) — `ChatRateLimiter` on ask routes only
+**2. Rate limit** (`ENABLE_RATE_LIMIT`) — `ChatRateLimiter` in middleware on **ask** routes only (`/ask`, `/ask/stream`)
 
 - Key: `rate:user:{user_id}:chat:{minute}`  
 - `INCR` + `EXPIRE 60`, cap 10/min, HTTP 429  

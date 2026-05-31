@@ -1,6 +1,6 @@
 # Middleware (FastAPI API layer)
 
-Thin HTTP layer: routes, JWT, Pydantic validation, HTTP status codes. Business logic lives in the `backend` package.
+Thin HTTP layer: routes, JWT, Pydantic validation, HTTP status codes. Business logic lives in the `backend` package (`app`). Chat **rate limiting** runs here on `/chat/.../ask` routes when `ENABLE_RATE_LIMIT=true`.
 
 ## Main folders
 
