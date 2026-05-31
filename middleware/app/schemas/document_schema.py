@@ -1,6 +1,6 @@
-"""Pydantic shapes for document endpoints — what the frontend sees.
+"""Pydantic models for /documents responses and rename requests.
 
-We never expose storage_path; that's internal server layout only.
+I never expose storage_path — that path is server-internal only.
 """
 
 from __future__ import annotations
@@ -11,9 +11,9 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
+# One document row as the frontend sees it after upload or list/get.
+# Includes status (uploaded / processing / ready / failed) but not storage_path.
 class DocumentResponse(BaseModel):
-    """One document as the API returns it — status, names, no storage_path."""
-
     model_config = ConfigDict(from_attributes=True)
 
     id: uuid.UUID
@@ -27,15 +27,16 @@ class DocumentResponse(BaseModel):
     updated_at: datetime
 
 
+# Request body for PATCH /documents/{document_id}.
+# display_name is the UI label only; the file on disk keeps its original name.
 class DocumentRenameRequest(BaseModel):
-    """PATCH /documents/{id} body — new display_name for the UI."""
-
     display_name: str = Field(..., min_length=1, max_length=120)
 
+    # Trim leading/trailing whitespace before saving display_name.
+    # Reject empty strings so the UI never shows a blank label.
     @field_validator("display_name")
     @classmethod
     def strip_and_validate_display_name(cls, value: str) -> str:
-        """Trim whitespace and reject empty labels after strip."""
         trimmed = value.strip()
         if not trimmed:
             raise ValueError("display_name must not be empty")

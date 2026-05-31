@@ -19,9 +19,9 @@ if TYPE_CHECKING:
     from app.models.chat_session import ChatSession
 
 
+# ORM row for one chat line — user question or assistant reply.
+# Assistant rows may carry sources_json with chunk citations for the UI.
 class Message(Base):
-    """One line in a chat — user question or assistant reply (with optional citations)."""
-
     __tablename__ = "messages"
 
     id: Mapped[uuid.UUID] = mapped_column(

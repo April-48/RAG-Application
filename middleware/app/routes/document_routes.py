@@ -1,7 +1,7 @@
-"""Document API routes — upload, list, rename, download, delete.
+"""Document HTTP routes — upload, list, rename, download, delete.
 
-All the real logic is in DocumentService. We just auth the user, map exceptions
-to HTTP codes, and kick off background ingestion after upload.
+DocumentService owns the logic. I map domain exceptions to HTTP status codes here.
+After upload I schedule ingest_document() in BackgroundTasks so the response is fast.
 """
 
 from __future__ import annotations
@@ -40,13 +40,17 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 @router.post(
     "/upload", response_model=DocumentResponse, status_code=status.HTTP_201_CREATED
 )
+# POST /documents/upload — accept multipart file upload for the logged-in user.
+# DocumentService saves bytes to disk and creates a row with status "uploaded".
+# I schedule ingest_document() in BackgroundTasks so this handler returns fast.
+# Return DocumentResponse with HTTP 201.
+# Return HTTP 400 for missing filename or unsupported extension (.pdf, .txt, .docx).
 def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DocumentResponse:
-    """Upload a file — returns immediately; ingestion runs in BackgroundTasks."""
     if not file.filename:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST, detail="No file provided"
@@ -62,27 +66,29 @@ def upload_document(
             detail=f"Unsupported file type. Allowed: {allowed}",
         ) from exc
 
-    # Return right away with status "uploaded"; worker flips to ready/failed later.
     background_tasks.add_task(ingest_document, document.id, current_user.id)
     return document
 
 
 @router.get("", response_model=list[DocumentResponse])
+# GET /documents — list every document owned by the current user.
+# DocumentService.list_documents returns rows newest-first for the dashboard.
 def list_documents(
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[DocumentResponse]:
-    """List all documents owned by the current user."""
     return DocumentService(db).list_documents(current_user.id)
 
 
 @router.get("/{document_id}", response_model=DocumentResponse)
+# GET /documents/{document_id} — fetch one owned document by id.
+# Return DocumentResponse on success.
+# Return HTTP 404 if the id does not exist or belongs to another user.
 def get_document(
     document_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DocumentResponse:
-    """Get one owned document by id — 404 if missing or not yours."""
     try:
         return DocumentService(db).get_document(document_id, current_user.id)
     except DocumentNotFoundError as exc:
@@ -92,13 +98,15 @@ def get_document(
 
 
 @router.patch("/{document_id}", response_model=DocumentResponse)
+# PATCH /documents/{document_id} — rename the UI label (display_name).
+# The original filename on disk does not change.
+# Return HTTP 404 if the document is missing or not owned by this user.
 def rename_document(
     document_id: uuid.UUID,
     body: DocumentRenameRequest,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> DocumentResponse:
-    """Update display_name (UI label only — file on disk unchanged)."""
     try:
         return DocumentService(db).rename_document(
             document_id, current_user.id, body.display_name
@@ -110,12 +118,15 @@ def rename_document(
 
 
 @router.get("/{document_id}/file")
+# GET /documents/{document_id}/file — download or open the original upload.
+# DocumentService resolves the path after an owner check.
+# Return a FileResponse stream; never expose storage_path in JSON.
+# Return HTTP 404 if the doc is missing, not owned, or the file vanished from disk.
 def get_document_file(
     document_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> FileResponse:
-    """Stream the original uploaded file after owner check — never exposes storage_path."""
     try:
         path, media_type, filename = DocumentService(db).get_original_file(
             document_id, current_user.id
@@ -138,12 +149,15 @@ def get_document_file(
 
 
 @router.delete("/{document_id}", status_code=status.HTTP_204_NO_CONTENT)
+# DELETE /documents/{document_id} — remove an owned document.
+# DocumentService deletes the DB row (chunks and messages cascade) and wipes disk files.
+# Return HTTP 204 with an empty body on success.
+# Return HTTP 404 if the document is missing or not owned by this user.
 def delete_document(
     document_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> Response:
-    """Delete document row, chunks, and files on disk for an owned document."""
     try:
         DocumentService(db).delete_document(document_id, current_user.id)
     except DocumentNotFoundError as exc:

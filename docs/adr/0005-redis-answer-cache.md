@@ -1,4 +1,4 @@
-# ADR 0005: Optional Redis answer cache
+# ADR 0005: Optional Redis (cache + rate limit)
 
 ## Status
 
@@ -6,46 +6,32 @@ Accepted (MVP)
 
 ## Context
 
-A full RAG request embeds the question, searches vectors, calls the LLM, and saves chat history. Asking the **same question twice** repeats all of that — slower and more expensive. I wanted a speed-up for demos without making Redis required for correctness.
+I use Redis for two optional things: speed up repeat questions, and limit chat asks per minute. The app must keep working if Redis is unavailable.
 
 ## Decision
 
-When `ENABLE_REDIS_CACHE=true` (default in `.env.example`), cache successful answers in **`ChatService`**.
+Two toggles (`true` in `.env.example`; code defaults `false` without `.env`):
 
-- **Key:** `rag:answer:{user_id}:{document_id}:{sha256(normalized_question)}`
-- **Normalization (key only):** `question.strip().lower()` — only whitespace and casing; different wording is a different key.
-- **Value:** JSON `{"answer": "...", "sources": [...]}`
-- **TTL:** `CACHE_TTL_SECONDS` (default 3600)
+**1. Answer cache** (`ENABLE_REDIS_CACHE`) — `ChatService` / `AnswerCache`
 
-On **cache hit:** return cached answer and sources; skip retrieval and LLM. Still save the assistant message to chat history.
+- Key: `rag:answer:{user_id}:{document_id}:{sha256(normalized_question)}`  
+- Value: `{answer, sources}`, TTL default 3600s  
+- Miss or error → full RAG path  
 
-On **miss**, disabled cache, or **Redis error:** run full RAG. The request must **not** fail because of cache.
+**2. Rate limit** (`ENABLE_RATE_LIMIT`) — `ChatRateLimiter` on ask routes only
 
-**Not cached:** LLM failures and fixed insufficient-context messages.
+- Key: `rate:user:{user_id}:chat:{minute}`  
+- `INCR` + `EXPIRE 60`, cap 10/min, HTTP 429  
 
-Redis is for speed and cost — not for correctness.
-
-## Alternatives considered
-
-- **No cache** — simple; weak “ask twice” demo.
-- **In-process LRU** — not shared across instances; lost on restart.
-- **HTTP-level cache only** — does not fit auth, per-user keys, and chat history writes well.
-
-## Why this works
-
-- **Fail-open** — chat works with Redis stopped (see troubleshooting doc).
-- Keys include `user_id` and `document_id` (ADR 0003).
-- Simple normalization without semantic deduplication.
-- Logs under `app.cache.*` show hits and misses during dev.
+Both fail-open via `redis_client.py`.
 
 ## Trade-offs
 
-- **Stale answers** until TTL if document content changes — re-ingest does not clear cache today.
-- Key does not include prompt version, model name, or retrieval settings — flush Redis manually after those change.
-- “Hello?” and “hello?” match; different punctuation or wording does not.
+| Good | Bad |
+| ---- | --- |
+| Nice cache demo; basic cost guard | Cache only expires by TTL — not cleared when document chunks change |
+| Optional — not required for correctness | Not production-grade rate limiting |
 
-## Future improvements
+## Future
 
-- Include prompt/model/retrieval version in the key.
-- Invalidate on re-ingest or document delete.
-- Update key design for multi-document scope (ADR 0003).
+The same Redis instance could later serve as the Celery/RQ broker for ingestion workers (ADR 0004), so cache and queue would share one service in a small deployment.

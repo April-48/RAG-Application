@@ -13,35 +13,32 @@ from app.core.config import get_settings
 from app.core.exceptions import LLMError
 
 
+# Minimal chat interface — one-shot and streaming generation.
 @runtime_checkable
 class LLM(Protocol):
-    """Minimal chat interface — one-shot and streaming generation."""
 
+    # Return the full assistant reply for a chat message list.
     def generate(self, messages: list[dict[str, str]]) -> str:
-        """Return full assistant reply for a chat message list."""
         ...
 
+    # Yield assistant reply tokens one at a time.
     def generate_stream(
         self, messages: list[dict[str, str]]
     ) -> Iterator[str]:
-        """Yield assistant reply tokens one at a time."""
         ...
 
 
+# Chat completions via OpenAI or any OpenAI-compatible endpoint.
+# When base_url is set, I allow missing API keys for local providers.
 class OpenAILLMService:
-    """Chat completions via OpenAI or any OpenAI-compatible endpoint.
 
-    When ``base_url`` is set (e.g. OpenRouter/Ollama) an API key is optional, so
-    local providers that don't require one still work.
-    """
-
+    # Read model name, API key, and optional base URL from settings.
     def __init__(
         self,
         model: str | None = None,
         api_key: str | None = None,
         base_url: str | None = None,
     ) -> None:
-        """Read model name, API key, and optional base URL from settings."""
         settings = get_settings()
         self.model = model or settings.llm_model
         self.api_key = api_key if api_key is not None else settings.openai_api_key
@@ -50,8 +47,9 @@ class OpenAILLMService:
         )
         self._client = None
 
+    # Lazy-create the OpenAI client — works with OpenAI or compatible servers.
+    # Raises LLMError when the API key and base URL are both missing.
     def _get_client(self):
-        """Lazy-create OpenAI client — works with OpenAI or compatible local servers."""
         if self._client is None:
             # Real OpenAI needs a key; local OpenAI-compatible servers often don't.
             if not self.api_key and not self.base_url:
@@ -65,8 +63,9 @@ class OpenAILLMService:
             )
         return self._client
 
+    # Non-streaming chat completion — returns full assistant text.
+    # Raises LLMError on network or API failures.
     def generate(self, messages: list[dict[str, str]]) -> str:
-        """Non-streaming chat completion — returns full assistant text."""
         client = self._get_client()
         try:
             response = client.chat.completions.create(
@@ -80,10 +79,11 @@ class OpenAILLMService:
         content = response.choices[0].message.content
         return (content or "").strip()
 
+    # Stream chat completion tokens one at a time for SSE.
+    # Raises LLMError on network or API failures.
     def generate_stream(
         self, messages: list[dict[str, str]]
     ) -> Iterator[str]:
-        """Stream chat completion tokens one at a time for SSE."""
         client = self._get_client()
         try:
             stream = client.chat.completions.create(
@@ -102,13 +102,11 @@ class OpenAILLMService:
             raise LLMError(f"LLM request failed: {exc}") from exc
 
 
+# Return the cached LLM provider selected by LLM_PROVIDER in settings.
+# Defaults to OpenAI; openai-compatible aliases use LLM_BASE_URL.
+# Raises LLMError when the provider name is unknown.
 @lru_cache
 def get_llm_service() -> LLM:
-    """Return the cached LLM provider selected by ``LLM_PROVIDER``.
-
-    Defaults to OpenAI. ``openai-compatible`` (and aliases) use the same OpenAI
-    client pointed at ``LLM_BASE_URL``.
-    """
     settings = get_settings()
     provider = (settings.llm_provider or "openai").lower()
     if provider in {"openai", "openai-compatible", "openrouter", "ollama", "vllm"}:

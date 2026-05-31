@@ -9,18 +9,15 @@ from app.rag.docx_parser import extract_docx_pages
 from app.rag.pdf_parser import PageText, extract_pdf_pages
 
 
+# Read a plain .txt file as one page with no page number.
 def _extract_txt(path: str | Path) -> list[PageText]:
-    """Read a plain .txt file as one page with no page number."""
     text = Path(path).read_text(encoding="utf-8", errors="replace")
     return [PageText(page_number=None, text=text)]
 
 
+# Extract text from a file as a list of pages.
+# Raises UnsupportedFileTypeError when file_type has no parser.
 def extract_pages(path: str | Path, file_type: str | None) -> list[PageText]:
-    """Extract text from a file as a list of pages.
-
-    Raises:
-        UnsupportedFileTypeError: if the file type has no parser.
-    """
     normalized = (file_type or "").lower().lstrip(".")
     if normalized == "pdf":
         return extract_pdf_pages(path)

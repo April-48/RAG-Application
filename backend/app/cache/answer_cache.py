@@ -21,40 +21,43 @@ logger = logging.getLogger("app.cache.answer_cache")
 CACHE_KEY_PREFIX = "rag:answer"
 
 
+# I hash normalized question text for the Redis cache key suffix.
+# I lowercase and trim only for the key — stored answers keep original casing.
 def _question_hash(question: str) -> str:
-    """SHA-256 of normalized question text — part of the Redis cache key."""
-    # Lowercase/trim only for the cache key — real question text stays as typed.
     normalized_question = question.strip().lower()
     return hashlib.sha256(normalized_question.encode("utf-8")).hexdigest()
 
 
+# Build the full Redis key: rag:answer:{user}:{doc}:{question_hash}.
+# Call this when reading or writing the answer cache.
 def build_cache_key(
     user_id: uuid.UUID, document_id: uuid.UUID, question: str
 ) -> str:
-    """Full Redis key: rag:answer:{user}:{doc}:{question_hash}."""
     return (
         f"{CACHE_KEY_PREFIX}:{user_id}:{document_id}:{_question_hash(question)}"
     )
 
 
+# Thin wrapper around Redis for (user, doc, question) -> answer + sources.
+# I fail open on any Redis error so chat keeps working without the cache.
 class AnswerCache:
-    """Thin wrapper around Redis for (user, doc, question) -> answer + sources."""
 
+    # Use an injected Redis client in tests; otherwise shared get_redis_client().
     def __init__(self, client: Any | None = None) -> None:
-        """Use injected Redis client in tests; otherwise shared get_redis_client()."""
         # Tests can inject a fake client; prod uses get_redis_client() or None.
         self._client = client if client is not None else get_redis_client()
         self._ttl = get_settings().cache_ttl_seconds
 
+    # True when I have a Redis client and the cache feature is on.
     @property
     def enabled(self) -> bool:
-        """True when we have a Redis client (cache feature is on)."""
         return self._client is not None
 
+    # Look up a cached answer and sources, or None on miss or Redis failure.
+    # Input: user_id, document_id, and the exact question text.
     def get(
         self, *, user_id: uuid.UUID, document_id: uuid.UUID, question: str
     ) -> dict[str, Any] | None:
-        """Look up cached answer + sources, or None on miss / any Redis problem."""
         if self._client is None:
             logger.debug("Redis cache disabled; skipping lookup")
             return None
@@ -81,6 +84,8 @@ class AnswerCache:
         logger.info("Redis cache hit for %s", key)
         return payload
 
+    # Store an answer and its sources under the question key.
+    # I no-op silently on any Redis write failure.
     def set(
         self,
         *,
@@ -90,7 +95,6 @@ class AnswerCache:
         answer: str,
         sources: list[dict[str, Any]],
     ) -> None:
-        """Cache an answer + its sources. No-op on any failure."""
         if self._client is None:
             return
         key = build_cache_key(user_id, document_id, question)

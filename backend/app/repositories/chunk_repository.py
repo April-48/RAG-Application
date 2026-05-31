@@ -14,15 +14,16 @@ from app.models.chunk import DocumentChunk
 from app.rag.text_splitter import Chunk
 
 
+# Persist and search document_chunks rows (text + pgvector embedding).
 class ChunkRepository:
-    """Persist and search document_chunks rows (text + pgvector embedding)."""
 
+    # Store the DB session this repo uses for every query.
     def __init__(self, db: Session) -> None:
-        """Store the DB session this repo uses for all queries."""
         self.db = db
 
+    # Bulk-insert embedded chunks after ingestion.
+    # Output: count of rows saved.
     def create_many(self, document_id: uuid.UUID, chunks: list[Chunk]) -> int:
-        """Bulk-insert embedded chunks after ingestion — returns how many rows saved."""
         rows = [
             DocumentChunk(
                 document_id=document_id,
@@ -37,24 +38,25 @@ class ChunkRepository:
         self.db.commit()
         return len(rows)
 
+    # Return top-k nearest chunks for this document only (cosine distance).
+    # Input: document_id, query embedding vector, and optional top_k.
     def search_by_document(
         self,
         document_id: uuid.UUID,
         query_embedding: list[float],
         top_k: int = 5,
     ) -> list[DocumentChunk]:
-        """Top-k nearest chunks for this document only (cosine distance in pgvector)."""
         return [chunk for chunk, _distance in self.search_by_document_with_distance(
             document_id, query_embedding, top_k
         )]
 
+    # Return top-k chunks plus pgvector cosine distance (lower = more similar).
     def search_by_document_with_distance(
         self,
         document_id: uuid.UUID,
         query_embedding: list[float],
         top_k: int = 5,
     ) -> list[tuple[DocumentChunk, float]]:
-        """Top-k chunks plus pgvector cosine distance (lower is more similar)."""
         distance = DocumentChunk.embedding.cosine_distance(query_embedding).label(
             "distance"
         )
@@ -69,8 +71,8 @@ class ChunkRepository:
         ).all()
         return [(row[0], float(row[1])) for row in rows]
 
+    # Return the earliest chunk for a document (chunk_index ASC, limit 1).
     def get_first_chunk(self, document_id: uuid.UUID) -> DocumentChunk | None:
-        """Return the earliest chunk for a document (chunk_index ASC, limit 1)."""
         return self.db.scalar(
             select(DocumentChunk)
             .where(DocumentChunk.document_id == document_id)
@@ -78,8 +80,8 @@ class ChunkRepository:
             .limit(1)
         )
 
+    # Return the latest chunk for a document (chunk_index DESC, limit 1).
     def get_last_chunk(self, document_id: uuid.UUID) -> DocumentChunk | None:
-        """Return the latest chunk for a document (chunk_index DESC, limit 1)."""
         return self.db.scalar(
             select(DocumentChunk)
             .where(DocumentChunk.document_id == document_id)
@@ -87,10 +89,10 @@ class ChunkRepository:
             .limit(1)
         )
 
+    # Return all chunks on one page in document order.
     def get_chunks_by_page(
         self, document_id: uuid.UUID, page_number: int
     ) -> list[DocumentChunk]:
-        """Return all chunks on a page in document order."""
         return list(
             self.db.scalars(
                 select(DocumentChunk)
@@ -102,8 +104,8 @@ class ChunkRepository:
             )
         )
 
+    # True when at least one chunk for this document stores a page_number.
     def has_page_metadata(self, document_id: uuid.UUID) -> bool:
-        """True when at least one chunk stores a page_number."""
         count = self.db.scalar(
             select(func.count())
             .select_from(DocumentChunk)
@@ -114,8 +116,8 @@ class ChunkRepository:
         )
         return bool(count)
 
+    # List all chunks for a doc in chunk_index order — debug and re-ingest.
     def list_by_document(self, document_id: uuid.UUID) -> list[DocumentChunk]:
-        """All chunks for a doc in chunk_index order — mostly for debugging/re-ingest."""
         return list(
             self.db.scalars(
                 select(DocumentChunk)
@@ -124,12 +126,12 @@ class ChunkRepository:
             )
         )
 
+    # Count how many chunks exist for this document.
     def count_by_document(self, document_id: uuid.UUID) -> int:
-        """How many chunks exist for this document."""
         return len(self.list_by_document(document_id))
 
+    # Wipe all chunks for a doc — I call this before re-ingest or on failure.
     def delete_by_document(self, document_id: uuid.UUID) -> None:
-        """Wipe all chunks for a doc — used before re-ingest or on delete."""
         self.db.execute(
             delete(DocumentChunk).where(DocumentChunk.document_id == document_id)
         )

@@ -1,6 +1,6 @@
-"""Auth routes — signup, login, GET /me.
+"""Auth HTTP routes — signup, login, and GET /me.
 
-Schemas validate the body; AuthService does hashing + JWT. No DB code here.
+Pydantic schemas validate the body. AuthService handles hashing and JWT. No SQL here.
 """
 
 from __future__ import annotations
@@ -25,8 +25,11 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 
 
 @router.post("/signup", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+# POST /auth/signup — create a new account from email + password.
+# AuthService hashes the password with bcrypt and inserts a User row.
+# Return UserResponse (id, email, created_at) with HTTP 201 on success.
+# Return HTTP 409 if that email is already registered.
 def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> User:
-    """Register a new user — 409 if email already exists."""
     try:
         return AuthService(db).signup(payload.email, payload.password)
     except EmailAlreadyExistsError as exc:
@@ -37,8 +40,11 @@ def signup(payload: SignupRequest, db: Session = Depends(get_db)) -> User:
 
 
 @router.post("/login", response_model=TokenResponse)
+# POST /auth/login — verify email and password, then mint a JWT.
+# AuthService.authenticate checks the bcrypt hash.
+# Return {"access_token": "...", "token_type": "bearer"} on success.
+# Return HTTP 401 for wrong email or password (same error message either way).
 def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse:
-    """Verify credentials and return a JWT access token."""
     try:
         token, _ = AuthService(db).login(payload.email, payload.password)
     except InvalidCredentialsError as exc:
@@ -50,6 +56,7 @@ def login(payload: LoginRequest, db: Session = Depends(get_db)) -> TokenResponse
 
 
 @router.get("/me", response_model=UserResponse)
+# GET /auth/me — return the User for the Bearer token on this request.
+# Depends on get_current_user, so missing or bad tokens become HTTP 401.
 def me(current_user: User = Depends(get_current_user)) -> User:
-    """Return the currently authenticated user from the Bearer token."""
     return current_user

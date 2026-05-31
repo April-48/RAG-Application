@@ -1,8 +1,4 @@
-"""FastAPI dependency: Bearer token -> User or 401.
-
-Pulls JWT from Authorization header, asks AuthService to decode it and load the
-user from Postgres. Used on basically every protected route.
-"""
+"""FastAPI dependency that turns a Bearer JWT into a User row."""
 
 from __future__ import annotations
 
@@ -24,11 +20,15 @@ _credentials_exception = HTTPException(
 )
 
 
+# FastAPI dependency used on any route that needs a logged-in user.
+# Read Authorization: Bearer <jwt> from the request header.
+# Call AuthService.get_user_from_token to decode the JWT and load the User row.
+# Return the User on success.
+# Raise HTTP 401 (same message every time) if the token is missing, invalid, or expired.
 def get_current_user(
     token: str | None = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    """FastAPI dependency — resolve Bearer JWT to User or raise 401."""
     if not token:
         raise _credentials_exception
     try:

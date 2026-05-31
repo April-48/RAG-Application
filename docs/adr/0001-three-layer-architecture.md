@@ -1,4 +1,4 @@
-# ADR 0001: Three-layer architecture (frontend / API / backend)
+# ADR 0001: Three-layer architecture
 
 ## Status
 
@@ -6,46 +6,25 @@ Accepted (MVP)
 
 ## Context
 
-This project needs three kinds of code: a browser UI, HTTP endpoints, and Python core logic (Postgres, pgvector, files, Redis, LLM). I had to split these without turning a homework MVP into multiple deployed services.
-
-Options I considered: one FastAPI app with server-rendered pages, a separate microservice behind the API, or letting the frontend talk to the database directly. None fit well — I wanted React with SSE streaming, clear layers for interviews, and a setup that runs on one laptop.
+I needed a UI, HTTP API, and Python core (Postgres, RAG, files, Redis, LLM) without needing three separate servers for a homework project.
 
 ## Decision
 
-Use a **three-layer layout** in one repo. In the MVP this is **not** three separate servers — it is folder separation inside one stack.
+Three folders, one process today:
 
-1. **Frontend** — React (Vite + TypeScript + Tailwind). UI only. All data comes from HTTP calls.
+1. **Frontend** — React UI  
+2. **API** (`middleware/`) — FastAPI routes + JWT  
+3. **Backend** (`app/`) — business logic, RAG, DB  
 
-2. **API layer** — FastAPI (`middleware/app/`). Routes, JWT auth, Pydantic validation, HTTP status codes. Route files stay thin and call the backend package.
-
-3. **Backend / core** — Python package `app` under `backend/`. Models, repos, services, RAG pipeline, storage, cache, ingestion worker. Installed with `pip install -e ./backend` and imported in the same process as FastAPI.
-
-Typical path: **browser → FastAPI route → backend service → Postgres / Redis / files → response**.
-
-## Alternatives considered
-
-| Option | Why not for MVP |
-| ------ | --------------- |
-| FastAPI + templates only | Bad fit for streaming chat UX |
-| Separate HTTP core service | Extra deployment and latency without real need yet |
-| Frontend → database | No safe place for JWT, RAG, or file parsing |
-| One big FastAPI file | Hard to explain layers and test RAG without HTTP |
-
-## Why this works
-
-- Frontend stays lightweight — the HTTP contract is the boundary.
-- FastAPI handles transport; the `app` package handles business rules.
-- One uvicorn process is enough for local dev and grading.
-- Easy to explain in interviews: each folder has a clear job.
+Flow: browser → route → service → Postgres / Redis / files.
 
 ## Trade-offs
 
-- API and backend share one Python process. Heavy ingestion or a crash can affect chat on the same worker.
-- Backend is not independently scalable until you extract workers or a separate service.
-- The folder is named `middleware/` for history; in docs I call it the **API layer**.
+| Good | Bad |
+| ---- | --- |
+| Easy to explain and test | API + backend share one uvicorn process |
+| Clear folder boundaries | API and backend share one process — needs splitting before it can scale |
 
-## Future improvements
+## Future
 
-- Move ingestion to Celery/RQ (ADR 0004) while keeping the same `app` package.
-- Optionally expose `app` as an internal HTTP service later.
-- Keep `api_design.md` and OpenAPI in sync when routes change.
+If traffic grows, I would run multiple FastAPI instances behind a load balancer and move ingestion to worker processes (ADR 0004), without changing the three-folder layout.

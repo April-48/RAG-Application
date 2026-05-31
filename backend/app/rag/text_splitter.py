@@ -10,23 +10,23 @@ DEFAULT_CHUNK_SIZE = 1000
 DEFAULT_OVERLAP = 200
 
 
+# In-memory chunk before I save it to document_chunks (text + optional embedding).
 @dataclass
 class Chunk:
-    """In-memory chunk before we save it to document_chunks (text + optional embedding)."""
-
     chunk_index: int
     chunk_text: str
     page_number: int | None
     embedding: list[float] | None = None
 
 
+# Split one text block into overlapping character windows.
+# Output: list of non-empty string pieces; empty input yields [].
 def split_text(
     text: str,
     *,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     overlap: int = DEFAULT_OVERLAP,
 ) -> list[str]:
-    """Split a single text block into overlapping character windows."""
     text = text.strip()
     if not text:
         return []
@@ -44,13 +44,13 @@ def split_text(
     return pieces
 
 
+# Split pages into a flat, globally-indexed list of Chunk objects.
 def split_pages(
     pages: list[PageText],
     *,
     chunk_size: int = DEFAULT_CHUNK_SIZE,
     overlap: int = DEFAULT_OVERLAP,
 ) -> list[Chunk]:
-    """Split pages into a flat, globally-indexed list of chunks."""
     chunks: list[Chunk] = []
     index = 0
     for page in pages:

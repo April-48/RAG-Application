@@ -1,83 +1,47 @@
 # Known limitations
 
-This file lists the main MVP limits so they are clear during demos and grading. This is a homework-scale project — not a production-ready system.
+These are the real gaps in the current MVP. I know they are there.
 
-For what **is** built and how it could scale later, see [achieved-and-future-work.md](achieved-and-future-work.md) and [system design](../system_design.md).
-
----
-
-## Single-document RAG only
-
-Chat works on **one selected document at a time**. Retrieval, cache keys, and the UI all assume one `document_id`. There is no “search all my uploads” mode in the MVP.
+See [achieved-and-future-work.md](achieved-and-future-work.md) for what **is** built.
 
 ---
 
-## BackgroundTasks is not a real queue
+## Single document only
 
-Ingestion uses FastAPI `BackgroundTasks` inside the API process. If the server restarts while a document is `processing`, the job may be lost or the status may get stuck. There is no retry queue or worker scaling.
+Chat is tied to one selected file. No “search all my uploads.”
 
-Future direction: Redis + Celery/RQ (see ADR 0004).
+## BackgroundTasks ≠ job queue
 
----
+Ingestion runs inside the API process. If the server restarts mid-ingest, the document stays stuck on `processing` forever.
 
-## Local storage is for development
+## Local disk storage
 
-Files live under `backend/storage/uploads/` on disk. That is fine for local demos. It does **not** work well if you run multiple API servers without shared storage.
+Fine for Docker on a laptop. Not safe for multiple API servers without shared or object storage.
 
-Future direction: S3-style backend behind `StorageBackend` (see ADR 0007).
+## Scanned PDFs
 
----
+No OCR. Image-only PDFs often have little text to retrieve.
 
-## Scanned PDFs need OCR (not built)
+## DOCX is basic
 
-We only read text from PDF text layers. Camera scans and image-only pages give little or no text, so retrieval is weak or empty.
+Paragraphs and simple tables only. No `.doc`, no complex layouts.
 
----
+## Embedding size is fixed
 
-## DOCX parsing is basic
+384 (local MiniLM) or 1536 (OpenAI) — pick one, migrate, re-ingest. Cannot mix.
 
-python-docx reads paragraphs and simple tables. Complex layouts, headers/footers, embedded images, and old `.doc` files are not supported. Use `.docx`.
+## No document sharing
 
----
+`document_permissions` exists in the DB but routes/UI do not use it. Owner-only today.
 
-## Embedding size is tied to the provider
+## Hybrid router is rule-based
 
-The database column size must match the embedder (384 for local MiniLM by default, 1536 for OpenAI). Switching providers needs a migration and **re-ingesting** all documents. You cannot mix different vector sizes in one database.
+Uses phrase matching for page/section/summary questions. If the wording is unusual, it falls back to semantic search — which may not always be what the user wanted. Page lookup needs PDF page metadata.
 
----
+## Other gaps
 
-## Document sharing is not wired up
+- Redis rate limit is a basic demo guard, not real abuse prevention
+- The answer cache only expires by TTL — it is not cleared when document chunks change
+- No monitoring or audit logs
 
-Migration `0001_initial` creates a `document_permissions` table, but **routes and UI do not use it**. Access is owner-only today. Unauthorized access returns the same `404` as a missing document.
-
----
-
-## Hybrid query routing is rule-based
-
-Before the LLM runs, a **query router** picks a retrieval mode based on simple phrase rules:
-
-- document beginning / ending
-- page lookup
-- section lookup
-- summary
-- semantic pgvector search (default)
-
-This helps with demo-style questions, but it has limits:
-
-- Unusual wording may not match the rules and falls back to semantic search.
-- **Page lookup** needs page metadata from PDF/DOCX. Plain TXT has no pages.
-- **Section lookup** matches headings with simple rules — odd headings may miss.
-- **Semantic mode** rejects weak matches below `RETRIEVAL_MIN_SIMILARITY` (default 0.32).
-- Summary mode picks a subset of chunks, not the full document text.
-
----
-
-## Other MVP gaps
-
-- **Redis chat rate limiting** is optional and fail-open. It is not real abuse prevention.
-- No monitoring or audit logs yet.
-- Redis answer cache is not cleared on re-ingest — stale answers are possible until TTL.
-- No OCR, virus scan, or content moderation on uploads.
-- Chat deep links (`?doc=`) work for ready documents, but deleted or inaccessible docs could use clearer UI messages.
-
-For more context see [system design](../system_design.md) and the [ADRs](../adr/).
+Scaling path (workers, S3, load balancer, vector indexes) is described in [system design](../system_design.md#future-scalability-focus).

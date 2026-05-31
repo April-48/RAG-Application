@@ -11,8 +11,9 @@ from app.core.config import get_settings
 logger = logging.getLogger("app.cache.redis_client")
 
 
+# Build a Redis client from a URL, or return None on import/setup failure.
+# I log which purpose (cache vs rate limit) failed so ops can spot misconfig.
 def _create_redis_client(redis_url: str, purpose: str) -> Any | None:
-    """Build a Redis client or return None on import/setup failure."""
     try:
         import redis
     except ImportError:
@@ -34,9 +35,10 @@ def _create_redis_client(redis_url: str, purpose: str) -> Any | None:
         return None
 
 
+# Return a shared Redis client for the answer cache, or None if cache is off.
+# I cache the client so every AnswerCache instance shares one connection pool.
 @lru_cache
 def get_redis_client() -> Any | None:
-    """Return a shared Redis client for answer cache, or None if cache is off."""
     settings = get_settings()
     if not settings.enable_redis_cache:
         logger.info("Redis cache disabled (ENABLE_REDIS_CACHE is false)")
@@ -44,9 +46,10 @@ def get_redis_client() -> Any | None:
     return _create_redis_client(settings.redis_url, "cache")
 
 
+# Return a shared Redis client for rate limiting, or None if disabled.
+# I use a separate cached client so cache and limiter toggles stay independent.
 @lru_cache
 def get_redis_rate_limit_client() -> Any | None:
-    """Return a shared Redis client for rate limiting, or None if disabled."""
     settings = get_settings()
     if not settings.enable_rate_limit:
         logger.info("Rate limiting disabled (ENABLE_RATE_LIMIT is false)")

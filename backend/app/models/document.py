@@ -23,9 +23,9 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
+# ORM row for one uploaded file — owner, status, and on-disk path.
+# I track lifecycle status from uploaded through processing to ready/failed.
 class Document(Base):
-    """One uploaded file — tracks owner, status, and where it lives on disk."""
-
     __tablename__ = "documents"
 
     id: Mapped[uuid.UUID] = mapped_column(

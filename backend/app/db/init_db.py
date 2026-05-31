@@ -19,13 +19,14 @@ from app.db.database import engine
 import app.models  # noqa: F401  (import registers all tables on Base.metadata)
 
 
+# I create every table registered on Base.metadata via SQLAlchemy create_all.
+# Use this for local dev only — production schema changes go through Alembic.
 def init_db() -> None:
-    """Create all tables registered on ``Base.metadata``."""
     Base.metadata.create_all(bind=engine)
 
 
+# CLI entry point: run create_all and print the table names I created.
 def main() -> None:
-    """CLI entry: print table names after create_all."""
     print("Creating database tables...")
     init_db()
     print("Done. Created tables:")

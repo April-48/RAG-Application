@@ -1,8 +1,8 @@
 # Local setup
 
-Step-by-step guide to run the RAG Document Q&A app on your machine. This is a **student MVP setup**, not a production guide.
+How I run this project locally. Homework / MVP setup — not production.
 
-Before a demo, also see [demo checklist](engineering-notes/demo-checklist.md).
+Before a demo, see [demo checklist](engineering-notes/demo-checklist.md).
 
 ---
 

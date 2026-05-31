@@ -35,16 +35,16 @@ MEDIA_TYPES: dict[str, str] = {
 }
 
 
+# I own upload lifecycle, ingestion trigger, rename, delete, and file download.
 class DocumentService:
-    """Owns upload lifecycle, ingestion trigger, rename, delete, and file download."""
 
+    # Wire repos, storage backend, and RAG pipeline for this session.
     def __init__(
         self,
         db: Session,
         storage: StorageBackend | None = None,
         embedder: Embedder | None = None,
     ) -> None:
-        """Wire repos, storage backend, and RAG pipeline for this session."""
         self.db = db
         self.documents = DocumentRepository(db)
         self.chunks = ChunkRepository(db)
@@ -52,10 +52,11 @@ class DocumentService:
         self.embedder = embedder or get_embedding_service()
         self.pipeline = RAGPipeline(db, embedder=self.embedder)
 
+    # Save a file to storage and create a DB row — returns before ingest finishes.
+    # Raises UnsupportedFileTypeError when the extension is not allowed.
     def upload(
         self, *, owner_id: uuid.UUID, filename: str, fileobj: BinaryIO
     ) -> Document:
-        """Save file to storage, create DB row — returns immediately (ingest is async)."""
         extension = Path(filename).suffix.lower()
         if extension not in ALLOWED_EXTENSIONS:
             raise UnsupportedFileTypeError(extension)
@@ -87,8 +88,9 @@ class DocumentService:
         # so upload returns fast with status "uploaded".
         return document
 
+    # Parse, chunk, embed, and save — I update status processing -> ready/failed.
+    # Call this from the background worker after upload.
     def ingest(self, document: Document) -> None:
-        """Parse file, chunk, embed, save. Updates status processing -> ready/failed."""
         self.documents.update_status(document, "processing")
         try:
             created = self.pipeline.ingest(
@@ -108,31 +110,32 @@ class DocumentService:
 
         self.documents.update_status(document, "ready")
 
+    # List every document owned by this user — dashboard view.
     def list_documents(self, owner_id: uuid.UUID) -> list[Document]:
-        """Dashboard list — all docs for this user."""
         return self.documents.list_by_owner(owner_id)
 
+    # Fetch one owned document or raise DocumentNotFoundError.
     def get_document(self, document_id: uuid.UUID, owner_id: uuid.UUID) -> Document:
-        """Fetch one owned document or raise DocumentNotFoundError."""
         document = self.documents.get_owned(document_id, owner_id)
         if document is None:
             raise DocumentNotFoundError()
         return document
 
+    # Set the user-visible display name without renaming the stored file.
     def rename_document(
         self,
         document_id: uuid.UUID,
         owner_id: uuid.UUID,
         display_name: str,
     ) -> Document:
-        """Set the user-visible display name without changing the stored file."""
         document = self.get_document(document_id, owner_id)
         return self.documents.update_display_name(document, display_name)
 
+    # Fetch a document the user owns or has future permission to read.
+    # Raises DocumentNotFoundError for missing docs and wrong owners alike.
     def get_accessible_document(
         self, document_id: uuid.UUID, user_id: uuid.UUID
     ) -> Document:
-        """Same 404 whether doc missing or belongs to someone else — no leaking."""
         document = self.documents.get_owned(document_id, user_id)
         if document is not None:
             return document
@@ -145,14 +148,12 @@ class DocumentService:
 
         raise DocumentNotFoundError()
 
+    # Return absolute path, media type, and filename for an accessible document.
+    # I use the same access checks as chat and never expose storage_path to callers.
+    # Raises DocumentFileNotFoundError when the file is missing on disk.
     def get_original_file(
         self, document_id: uuid.UUID, user_id: uuid.UUID
     ) -> tuple[Path, str, str]:
-        """Return absolute path, media type, and filename for an accessible document.
-
-        Uses the same ownership/permission checks as chat. Does not expose
-        `storage_path` to callers.
-        """
         document = self.get_accessible_document(document_id, user_id)
         path = self.storage.full_path(document.storage_path)
         if not path.is_file():
@@ -162,8 +163,8 @@ class DocumentService:
         media_type = MEDIA_TYPES.get(ext, "application/octet-stream")
         return path, media_type, document.filename
 
+    # Delete the DB row and remove files from storage for an owned document.
     def delete_document(self, document_id: uuid.UUID, owner_id: uuid.UUID) -> None:
-        """Delete DB row and remove files from storage for an owned document."""
         document = self.get_document(document_id, owner_id)
         self.documents.delete(document)
         self.storage.delete_document(user_id=owner_id, document_id=document_id)

@@ -18,20 +18,24 @@ settings = get_settings()
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
 
+# I hash a plaintext password with bcrypt before storing it on User.
+# Input: raw password string. Output: bcrypt hash string.
 def hash_password(password: str) -> str:
-    """Hash a plaintext password with bcrypt."""
     return pwd_context.hash(password)
 
 
+# I check a login password against the stored bcrypt hash.
+# Input: plaintext password and stored hash. Output: True if they match.
 def verify_password(password: str, password_hash: str) -> bool:
-    """Check a plaintext password against a stored bcrypt hash."""
     return pwd_context.verify(password, password_hash)
 
 
+# I mint a signed JWT whose `sub` claim holds the user id.
+# Input: subject (user id) and optional expiry override.
+# Output: encoded JWT string. Default TTL comes from settings.
 def create_access_token(
     subject: str, expires_delta: timedelta | None = None
 ) -> str:
-    """Create a signed JWT whose `sub` claim is the given subject (user id)."""
     expire = datetime.now(timezone.utc) + (
         expires_delta or timedelta(minutes=settings.access_token_expire_minutes)
     )
@@ -39,12 +43,9 @@ def create_access_token(
     return jwt.encode(payload, settings.jwt_secret_key, algorithm=settings.jwt_algorithm)
 
 
+# I decode and verify a JWT, then return its subject (user id).
+# Raises InvalidTokenError if the token is malformed, expired, or lacks `sub`.
 def decode_access_token(token: str) -> str:
-    """Decode/verify a JWT and return its subject (user id).
-
-    Raises:
-        InvalidTokenError: if the token is malformed, expired, or missing `sub`.
-    """
     try:
         payload = jwt.decode(
             token, settings.jwt_secret_key, algorithms=[settings.jwt_algorithm]

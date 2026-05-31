@@ -28,8 +28,8 @@ from app.services.document_service import DocumentService
 Source = dict[str, Any]
 
 
+# Serialize a chunk to the source shape I store in cache and sources_json.
 def _chunk_to_source(chunk: DocumentChunk) -> Source:
-    """Serialize a chunk to the source shape stored in cache / sources_json."""
     return {
         "chunk_index": chunk.chunk_index,
         "page_number": chunk.page_number,
@@ -37,9 +37,10 @@ def _chunk_to_source(chunk: DocumentChunk) -> Source:
     }
 
 
+# I orchestrate Q&A: access checks, cache, retrieval, LLM, and chat history.
 class ChatService:
-    """Orchestrates Q&A: access checks, cache, retrieval, LLM, chat history."""
 
+    # Wire document service, RAG pipeline, chat repo, and optional Redis cache.
     def __init__(
         self,
         db: Session,
@@ -50,19 +51,17 @@ class ChatService:
         chats: ChatRepository | None = None,
         cache: AnswerCache | None = None,
     ) -> None:
-        """Wire document service, RAG pipeline, chat repo, and optional Redis cache."""
         self.documents = documents or DocumentService(db, embedder=embedder)
         self.pipeline = pipeline or RAGPipeline(db, embedder=embedder, llm=llm)
         self.chats = chats or ChatRepository(db)
         self.cache = cache or AnswerCache()
 
+    # Verify doc access, ensure status is ready, and persist the user question.
+    # Returns session id — I do not run retrieval yet so cache hits skip it.
+    # Raises DocumentNotReadyError when ingestion has not finished.
     def _begin(
         self, *, user_id: uuid.UUID, document_id: uuid.UUID, question: str
     ) -> uuid.UUID:
-        """Make sure user can access doc, it's ready, and save their question first.
-
-        Returns session id. Does NOT run retrieval yet — cache hit can skip that entirely.
-        """
         document = self.documents.get_accessible_document(document_id, user_id)
         if document.status != "ready":
             raise DocumentNotReadyError()
@@ -75,10 +74,11 @@ class ChatService:
         )
         return session.id
 
+    # Answer one question and return the reply plus source citations.
+    # I check Redis before retrieval and LLM to save tokens on repeats.
     def ask(
         self, *, user_id: uuid.UUID, document_id: uuid.UUID, question: str
     ) -> tuple[str, list[Source]]:
-        """One-shot answer + sources — checks cache before retrieval/LLM."""
         session_id = self._begin(
             user_id=user_id, document_id=document_id, question=question
         )
@@ -136,10 +136,10 @@ class ChatService:
         )
         return answer, sources
 
+    # Stream SSE-style events: token chunks, then sources, then done.
     def ask_stream(
         self, *, user_id: uuid.UUID, document_id: uuid.UUID, question: str
     ) -> Iterator[dict[str, Any]]:
-        """SSE-style event generator: token chunks, then sources, then done."""
         session_id = self._begin(
             user_id=user_id, document_id=document_id, question=question
         )
@@ -147,8 +147,10 @@ class ChatService:
             user_id=user_id, document_id=document_id, question=question
         )
 
+        # Inner generator for ask_stream.
+        # Yields dict events: token chunks, then sources, then done.
+        # I use the same event shape for cache hits and live LLM streaming.
         def event_stream() -> Iterator[dict[str, Any]]:
-            """Yield token/sources/done events — same shape for cache hit or live LLM."""
             if cached is not None:
                 answer = cached["answer"]
                 sources = cached.get("sources", [])
@@ -217,14 +219,12 @@ class ChatService:
 
         return event_stream()
 
+    # Return persisted messages for this user's session on a document.
+    # Raises DocumentNotFoundError when the user cannot access the document.
+    # Returns an empty list when no conversation exists yet.
     def get_history(
         self, *, user_id: uuid.UUID, document_id: uuid.UUID
     ) -> list[Message]:
-        """Return the persisted messages for this user's session on a document.
-
-        Validates access first (raises `DocumentNotFoundError` if the user may
-        not see the document). Returns an empty list if no conversation exists.
-        """
         self.documents.get_accessible_document(document_id, user_id)
         session = self.chats.get_session(
             user_id=user_id, document_id=document_id

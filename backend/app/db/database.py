@@ -28,8 +28,9 @@ SessionLocal = sessionmaker(
 )
 
 
+# I yield a SQLAlchemy session for one request and close it in `finally`.
+# FastAPI Depends(get_db) calls this — do not leave sessions open manually.
 def get_db() -> Generator[Session, None, None]:
-    """Yield a database session, ensuring it is closed afterwards."""
     db = SessionLocal()
     try:
         yield db

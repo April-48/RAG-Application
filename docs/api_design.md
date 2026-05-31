@@ -8,7 +8,7 @@ You can also open the live OpenAPI docs at `http://localhost:8000/docs`.
 
 - **Base URL:** `/` (example: `http://localhost:8000`)
 - **Auth:** protected routes need `Authorization: Bearer <token>`
-- **Ownership:** document and chat routes only return data for the logged-in user. If you try to access someone else's document, you get `404` (not `403`) so we do not leak whether that id exists.
+- **Ownership:** Accessing another user's document returns `404`, not `403` — this way the API does not leak whether a document id exists.
 - **JSON fields:** snake_case in request and response bodies
 - **Errors:** `{ "detail": "<message>" }` with the matching HTTP status code
 
@@ -72,7 +72,7 @@ Allowed file types: `.pdf`, `.txt`, `.docx`.
   "owner_id": "uuid",
   "filename": "report.pdf",
   "display_name": null,
-  "file_type": "application/pdf",
+  "file_type": "pdf",
   "visibility": "private",
   "status": "uploaded",
   "created_at": "2026-01-01T00:00:00Z",
@@ -80,7 +80,7 @@ Allowed file types: `.pdf`, `.txt`, `.docx`.
 }
 ```
 
-Document status flow: `uploaded` → `processing` → `ready` (or `failed`). The upload response returns right away. Ingestion runs in a background task after that.
+Document status flow: `uploaded` → `processing` → `ready` (or `failed`). The upload response comes back immediately. Ingestion runs in the background after that.
 
 **PATCH `/documents/{document_id}`**
 
@@ -92,7 +92,7 @@ Document status flow: `uploaded` → `processing` → `ready` (or `failed`). The
 
 ## Chat / Q&A (`/chat`)
 
-Chat is scoped to **one document**. Every route includes `{document_id}` in the path. Chat only works when the document status is `ready`.
+Chat is scoped to one document at a time. Every route takes a `{document_id}`. The document must be `ready` before you can ask questions.
 
 | Method | Path                             | Auth | Rate limit | Description              |
 | ------ | -------------------------------- | ---- | ---------- | ------------------------ |
@@ -100,7 +100,7 @@ Chat is scoped to **one document**. Every route includes `{document_id}` in the 
 | POST   | `/chat/{document_id}/ask/stream` | Yes  | Yes*       | SSE stream               |
 | GET    | `/chat/{document_id}/history`    | Yes  | No         | Chat history             |
 
-\* Rate limit applies when `ENABLE_RATE_LIMIT=true` (default in `.env.example`). Returns `429` when exceeded. If Redis is down, the app still allows the request.
+\* Rate limit applies when `ENABLE_RATE_LIMIT=true` (default in `.env.example`). Returns `429` when exceeded. If Redis is unavailable, the rate limit is skipped and the request goes through.
 
 **POST `/chat/{document_id}/ask`**
 
@@ -124,7 +124,7 @@ Chat is scoped to **one document**. Every route includes `{document_id}` in the 
 - `409` — document is not `ready` yet
 - `502` — LLM is unavailable (for semantic/summary paths)
 
-**Sources** are the retrieved chunks from the pipeline. They are not parsed out of the LLM reply. Each source has `chunk_index`, optional `page_number`, and `chunk_text`.
+**Sources** come from the retrieval pipeline — not from the LLM reply. Each source has `chunk_index`, optional `page_number`, and `chunk_text`.
 
 **POST `/chat/{document_id}/ask/stream`**
 
@@ -138,7 +138,7 @@ Each line looks like:
 { "type": "done" }
 ```
 
-On a cache hit, the server may send one full `token`, then `sources`, then `done`.
+On a cache hit, the server sends the full answer as one `token` event, then `sources`, then `done`.
 
 If the LLM fails during streaming:
 
@@ -176,7 +176,7 @@ For hybrid retrieval, some questions skip the LLM (direct extraction or weak evi
 
 | Method | Path      | Auth | Description  |
 | ------ | --------- | ---- | ------------ |
-| GET    | `/health` | No   | Liveness check |
+| GET    | `/health` | No   | Basic liveness check — returns `ok` if the server is up |
 
 ```json
 // response 200

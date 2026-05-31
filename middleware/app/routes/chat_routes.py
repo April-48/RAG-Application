@@ -1,7 +1,6 @@
-"""Chat routes — ask (JSON or SSE stream) and load history.
+"""Chat HTTP routes — one-shot ask, SSE stream, and history.
 
-ChatService does access checks, Redis cache, retrieval, LLM, and DB writes.
-We translate domain errors to 404/409/502 here.
+ChatService runs cache, retrieval, LLM, and DB writes. I translate domain errors to HTTP codes here.
 """
 
 from __future__ import annotations
@@ -32,13 +31,18 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 
 
 @router.post("/{document_id}/ask", response_model=AnswerResponse)
+# POST /chat/{document_id}/ask — one-shot RAG answer plus source chunks.
+# Depends on get_current_user_with_chat_rate_limit (auth + Redis cap).
+# ChatService checks cache, runs hybrid retrieval, calls the LLM when needed,
+# saves user and assistant messages, and may write Redis cache.
+# Return AnswerResponse JSON on success.
+# Map DocumentNotFoundError -> 404, DocumentNotReadyError -> 409, LLMError -> 502.
 def ask(
     document_id: uuid.UUID,
     payload: AskRequest,
     current_user: User = Depends(get_current_user_with_chat_rate_limit),
     db: Session = Depends(get_db),
 ) -> AnswerResponse:
-    """One-shot RAG answer + source chunks for a document question."""
     try:
         answer, sources = ChatService(db).ask(
             user_id=current_user.id,
@@ -67,14 +71,16 @@ def ask(
 
 
 @router.post("/{document_id}/ask/stream")
+# POST /chat/{document_id}/ask/stream — same RAG flow as /ask but over SSE.
+# ChatService.ask_stream yields dict events: token, sources, done (or error on LLM fail).
+# I validate access before opening the stream so 404/409 are normal HTTP errors.
+# Rate limit applies via get_current_user_with_chat_rate_limit.
 def ask_stream(
     document_id: uuid.UUID,
     payload: AskRequest,
     current_user: User = Depends(get_current_user_with_chat_rate_limit),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
-    """SSE stream of tokens, then sources, then done — same events on cache hit."""
-    # Validate + save user message before streaming so 404/409 are normal HTTP errors.
     try:
         events = ChatService(db).ask_stream(
             user_id=current_user.id,
@@ -91,8 +97,9 @@ def ask_stream(
             detail="Document is not ready for questions yet",
         ) from exc
 
+    # Inner generator: wrap each ChatService event dict as one SSE "data:" line.
+    # If the LLM throws mid-stream, emit one error event instead of dropping the connection.
     def sse() -> Iterator[str]:
-        """Wrap pipeline events as Server-Sent Events data lines."""
         try:
             for event in events:
                 yield f"data: {json.dumps(event)}\n\n"
@@ -111,12 +118,15 @@ def ask_stream(
 
 
 @router.get("/{document_id}/history", response_model=list[MessageItem])
+# GET /chat/{document_id}/history — load saved messages for this user + document.
+# ChatService checks document access first, then reads chat_sessions / messages.
+# Return an empty list if no conversation exists yet.
+# Return HTTP 404 if the document is missing or not accessible.
 def history(
     document_id: uuid.UUID,
     current_user: User = Depends(get_current_user),
     db: Session = Depends(get_db),
 ) -> list[MessageItem]:
-    """Return persisted chat messages for this user + document."""
     try:
         messages = ChatService(db).get_history(
             user_id=current_user.id, document_id=document_id

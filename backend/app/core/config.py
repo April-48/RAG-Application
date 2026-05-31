@@ -9,9 +9,9 @@ from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+# I load every runtime knob from the environment or a local `.env` file.
+# Pydantic validates types and gives me one object the rest of the app imports.
 class Settings(BaseSettings):
-    """Application settings, read from the environment / `.env`."""
-
     model_config = SettingsConfigDict(
         env_file=".env",
         env_file_encoding="utf-8",
@@ -59,7 +59,8 @@ class Settings(BaseSettings):
     upload_dir: str = "backend/storage/uploads"
 
 
+# I cache Settings so every import shares one parsed config object.
+# Call this at startup or in module scope — do not construct Settings() directly.
 @lru_cache
 def get_settings() -> Settings:
-    """Return a cached Settings instance."""
     return Settings()

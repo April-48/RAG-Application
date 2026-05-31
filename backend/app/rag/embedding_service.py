@@ -13,42 +13,40 @@ from app.core.config import get_settings
 from app.core.exceptions import EmbeddingError
 
 
+# Minimal interface the ingestion and retrieval pipeline depends on.
 @runtime_checkable
 class Embedder(Protocol):
-    """Minimal interface the ingestion + retrieval pipeline depends on."""
 
+    # Vector size this embedder produces — must match pgvector column width.
     @property
     def dimension(self) -> int:
-        """Vector size produced by this embedder."""
         ...
 
+    # Embed many strings at once during ingestion batches.
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        """Embed many strings at once (ingestion batches)."""
         ...
 
+    # Embed a single question string for retrieval.
     def embed_query(self, text: str) -> list[float]:
-        """Embed a single question for retrieval."""
         ...
 
 
+# Embeddings via sentence-transformers — runs locally with no API key.
+# I load the model lazily on first use so imports stay cheap.
 class LocalMiniLMEmbeddingService:
-    """Embeddings via sentence-transformers (runs locally, no API key).
 
-    The model is loaded lazily (on first use) so importing this module stays
-    cheap, and its dimension is validated against ``embedding_dim``.
-    """
-
+    # Configure local model name and expected vector dimension from settings.
     def __init__(
         self, model_name: str | None = None, expected_dim: int | None = None
     ) -> None:
-        """Configure local model name and expected vector dimension from settings."""
         settings = get_settings()
         self.model_name = model_name or settings.embedding_model
         self.expected_dim = expected_dim or settings.embedding_dim
         self._model = None
 
+    # Lazy-load sentence-transformers and verify dimension matches config.
+    # Raises EmbeddingError when the package is missing or dims disagree.
     def _load(self):
-        """Lazy-load sentence-transformers model and verify dimension matches config."""
         if self._model is None:
             try:
                 from sentence_transformers import SentenceTransformer
@@ -67,13 +65,14 @@ class LocalMiniLMEmbeddingService:
             self._model = model
         return self._model
 
+    # Configured embedding dimension for local MiniLM.
     @property
     def dimension(self) -> int:
-        """Configured embedding dimension for local MiniLM."""
         return self.expected_dim
 
+    # Encode strings with sentence-transformers (normalized vectors).
+    # Raises EmbeddingError on model or runtime failures.
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        """Encode strings with sentence-transformers (normalized vectors)."""
         if not texts:
             return []
         try:
@@ -87,33 +86,31 @@ class LocalMiniLMEmbeddingService:
             raise EmbeddingError(f"Embedding generation failed: {exc}") from exc
         return [vector.tolist() for vector in vectors]
 
+    # Embed a single question string for retrieval.
     def embed_query(self, text: str) -> list[float]:
-        """Embed a single question string for retrieval."""
         return self.embed_texts([text])[0]
 
 
+# Embeddings via the OpenAI API (e.g. text-embedding-3-small).
+# I create the client lazily and raise EmbeddingError when setup fails.
 class OpenAIEmbeddingService:
-    """Embeddings via the OpenAI API (e.g. ``text-embedding-3-small``).
 
-    The client is created lazily and a clear `EmbeddingError` is raised if the
-    API key or package is missing.
-    """
-
+    # Configure OpenAI embedding model, dimension, and API key from settings.
     def __init__(
         self,
         model_name: str | None = None,
         expected_dim: int | None = None,
         api_key: str | None = None,
     ) -> None:
-        """Configure OpenAI embedding model, dimension, and API key from settings."""
         settings = get_settings()
         self.model_name = model_name or settings.embedding_model
         self.expected_dim = expected_dim or settings.embedding_dim
         self.api_key = api_key if api_key is not None else settings.openai_api_key
         self._client = None
 
+    # Create the OpenAI client on first use.
+    # Raises EmbeddingError when the API key or openai package is missing.
     def _get_client(self):
-        """Create OpenAI client on first use — raises if API key missing."""
         if not self.api_key:
             raise EmbeddingError("OPENAI_API_KEY is not configured")
         if self._client is None:
@@ -124,13 +121,14 @@ class OpenAIEmbeddingService:
             self._client = OpenAI(api_key=self.api_key)
         return self._client
 
+    # Configured embedding dimension for OpenAI.
     @property
     def dimension(self) -> int:
-        """Configured embedding dimension for OpenAI."""
         return self.expected_dim
 
+    # Call OpenAI embeddings API for a batch of strings.
+    # Raises EmbeddingError on network or API failures.
     def embed_texts(self, texts: list[str]) -> list[list[float]]:
-        """Call OpenAI embeddings API for a batch of strings."""
         if not texts:
             return []
         client = self._get_client()
@@ -146,19 +144,16 @@ class OpenAIEmbeddingService:
             raise EmbeddingError(f"Embedding generation failed: {exc}") from exc
         return [item.embedding for item in response.data]
 
+    # Embed one question via OpenAI.
     def embed_query(self, text: str) -> list[float]:
-        """Embed one question via OpenAI."""
         return self.embed_texts([text])[0]
 
 
+# Return the cached embedding provider selected by EMBEDDING_PROVIDER.
+# The underlying model loads lazily on first embed, so this call is cheap.
+# Raises EmbeddingError when the provider name is unknown.
 @lru_cache
 def get_embedding_service() -> Embedder:
-    """Return the cached embedding provider selected by ``EMBEDDING_PROVIDER``.
-
-    The underlying model/client loads lazily on first embed, so this is cheap to
-    call. Defaults to the local sentence-transformers model; use ``openai`` for
-    the OpenAI provider.
-    """
     settings = get_settings()
     provider = (settings.embedding_provider or "local").lower()
     if provider in {"local", "sentence-transformers", "sentence_transformers", "st"}:

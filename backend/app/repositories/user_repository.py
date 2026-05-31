@@ -10,25 +10,28 @@ from sqlalchemy.orm import Session
 from app.models.user import User
 
 
+# Thin SQLAlchemy wrapper around the users table — no business rules here.
 class UserRepository:
-    """Thin SQLAlchemy wrapper around the users table."""
 
+    # Store the DB session this repo uses for every query.
     def __init__(self, db: Session) -> None:
-        """Store the DB session this repo uses for all queries."""
         self.db = db
 
+    # Find a user by email — I call this at signup and login.
+    # Output: User row or None if no match.
     def get_by_email(self, email: str) -> User | None:
-        """Find a user by email — used at signup (duplicate check) and login."""
         return self.db.scalar(select(User).where(User.email == email))
 
+    # Load one user by primary key.
+    # Accepts UUID or string id. Output: User row or None if missing.
     def get_by_id(self, user_id: uuid.UUID | str) -> User | None:
-        """Load one user by primary key, or None if missing."""
         if isinstance(user_id, str):
             user_id = uuid.UUID(user_id)
         return self.db.get(User, user_id)
 
+    # Insert a new user row with a precomputed password hash.
+    # Output: committed User with generated id and created_at.
     def create(self, *, email: str, password_hash: str) -> User:
-        """Insert a new user row and return it with generated id/timestamp."""
         user = User(email=email, password_hash=password_hash)
         self.db.add(user)
         self.db.commit()

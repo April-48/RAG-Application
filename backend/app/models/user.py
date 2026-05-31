@@ -21,9 +21,9 @@ if TYPE_CHECKING:
     from app.models.document_permission import DocumentPermission
 
 
+# ORM row for a registered account — email login and document owner.
+# I tie documents and chat sessions to owner_id for access control.
 class User(Base):
-    """Registered account — email login and owner of documents."""
-
     __tablename__ = "users"
 
     id: Mapped[uuid.UUID] = mapped_column(

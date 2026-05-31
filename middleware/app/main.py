@@ -1,8 +1,6 @@
-"""FastAPI entry point — wires routers, CORS, health check.
+"""FastAPI entry point. I keep this layer thin — routes validate HTTP and call backend services.
 
-This layer is thin on purpose: routes validate HTTP stuff and call backend
-services. Run from repo root:
-
+Run from repo root:
     uvicorn middleware.app.main:app --reload --port 8000
 """
 
@@ -13,7 +11,7 @@ from .routes import auth_routes, chat_routes, document_routes
 
 app = FastAPI(title="RAG Document Q&A API")
 
-# Vite dev server needs this or the browser blocks API calls (CORS).
+# I allow the Vite dev origin or the browser blocks API calls.
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -28,8 +26,10 @@ app.add_middleware(
 
 
 @app.get("/health")
+# GET /health — liveness probe for Docker Compose and manual curl checks.
+# Return {"status": "ok"} when the uvicorn process is running.
+# I do not check Postgres or Redis here; this only proves the API layer is up.
 def health() -> dict[str, str]:
-    """Simple liveness probe for docker / manual checks."""
     return {"status": "ok"}
 
 

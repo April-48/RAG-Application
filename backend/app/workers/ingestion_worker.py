@@ -13,8 +13,10 @@ from app.db.database import SessionLocal
 from app.services.document_service import DocumentService
 
 
+# I run full ingestion in a fresh DB session after upload returns.
+# Input: document_id and owner_id from the upload handler.
+# I no-op if the document row is missing or not owned by owner_id.
 def ingest_document(document_id: uuid.UUID, owner_id: uuid.UUID) -> None:
-    """Run ingest in a fresh session so we're not tied to the upload request."""
     db = SessionLocal()
     try:
         service = DocumentService(db)

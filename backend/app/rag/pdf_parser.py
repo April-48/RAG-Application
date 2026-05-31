@@ -8,20 +8,16 @@ from pathlib import Path
 import fitz  # PyMuPDF
 
 
+# Extracted text for a single page.
+# page_number is 1-based for PDF and None for formats without pages.
 @dataclass
 class PageText:
-    """Extracted text for a single page.
-
-    `page_number` is 1-based for paged formats (PDF) and ``None`` for formats
-    without pages (e.g. plain text).
-    """
-
     page_number: int | None
     text: str
 
 
+# Return per-page text for a PDF file using PyMuPDF.
 def extract_pdf_pages(path: str | Path) -> list[PageText]:
-    """Return per-page text for a PDF file."""
     pages: list[PageText] = []
     with fitz.open(str(path)) as doc:
         for index, page in enumerate(doc, start=1):

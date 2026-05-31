@@ -21,9 +21,9 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
+# ORM row grouping messages for one user chatting about one document.
+# I keep one session per (user, document) so history survives page refresh.
 class ChatSession(Base):
-    """Groups messages for one user chatting about one document."""
-
     __tablename__ = "chat_sessions"
 
     id: Mapped[uuid.UUID] = mapped_column(

@@ -14,8 +14,8 @@ from docx.table import Table
 from app.rag.pdf_parser import PageText
 
 
+# Flatten a DOCX table to one line per row: cell | cell | cell.
 def _table_lines(table: Table) -> list[str]:
-    """Flatten a table to one line per row: ``cell | cell | cell``."""
     lines: list[str] = []
     for row in table.rows:
         cells = [cell.text.strip() for cell in row.cells]
@@ -25,13 +25,9 @@ def _table_lines(table: Table) -> list[str]:
     return lines
 
 
+# Return DOCX text as a single PageText with page_number=None.
+# Empty input yields one empty PageText so downstream splitting marks the doc failed.
 def extract_docx_pages(path: str | Path) -> list[PageText]:
-    """Return the DOCX text as a single page.
-
-    Paragraph text comes first, then table text. Empty input yields a single
-    empty `PageText`, matching the PDF/TXT flow where the downstream splitter
-    produces no chunks (and the document is marked ``failed``).
-    """
     document = DocxDocument(str(path))
 
     parts: list[str] = []

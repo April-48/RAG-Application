@@ -21,9 +21,9 @@ if TYPE_CHECKING:
     from app.models.user import User
 
 
+# Future ORM row granting another user access to someone's document.
+# I defined the schema now so sharing does not need a painful migration later.
 class DocumentPermission(Base):
-    """Future row granting another user access to someone's document (schema only)."""
-
     __tablename__ = "document_permissions"
     __table_args__ = (
         UniqueConstraint("document_id", "user_id", name="uq_document_user_permission"),

@@ -11,9 +11,12 @@ from pathlib import Path
 from typing import BinaryIO
 
 
+# Interface for saving and deleting uploaded document files.
+# I store a relative path in the DB so I can move the storage root later.
 class StorageBackend(ABC):
-    """Interface for saving and deleting uploaded document files."""
 
+    # Persist an upload and return a storage path reference for the DB.
+    # Input: user_id, document_id, filename, and a readable file object.
     @abstractmethod
     def save(
         self,
@@ -23,18 +26,18 @@ class StorageBackend(ABC):
         filename: str,
         fileobj: BinaryIO,
     ) -> str:
-        """Persist a file and return a storage path reference for the DB."""
+        pass
 
+    # Remove all stored files for one document.
+    # Input: user_id and document_id that identify the upload folder.
     @abstractmethod
     def delete_document(
         self, *, user_id: uuid.UUID | str, document_id: uuid.UUID | str
     ) -> None:
-        """Remove all stored files for a document."""
+        pass
 
+    # Resolve a stored path reference to a readable local filesystem path.
+    # Object-storage backends would download to a temp file and return that path.
     @abstractmethod
     def full_path(self, storage_path: str) -> Path:
-        """Resolve a stored path reference to a readable local filesystem path.
-
-        Non-local backends (e.g. object storage) would materialize the file
-        locally and return that path.
-        """
+        pass

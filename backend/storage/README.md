@@ -1,14 +1,9 @@
-# Backend storage (uploaded files)
+# Upload storage
 
-This folder holds uploaded files at runtime. The local storage backend (`backend/app/storage/local_storage.py`) writes here. It is separate from the Python source code so uploads do not mix with code.
-
-Layout:
+Runtime folder for uploaded files. Not part of the Python package.
 
 ```
-uploads/
-└── {user_id}/
-    └── {document_id}/
-        └── <original file>
+uploads/{user_id}/{document_id}/<file>
 ```
 
-The folder is tracked in git with `.gitkeep`. Actual uploaded files are gitignored.
+Tracked with `.gitkeep`; actual uploads are gitignored.

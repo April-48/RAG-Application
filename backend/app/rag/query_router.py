@@ -11,9 +11,8 @@ from dataclasses import dataclass
 from enum import Enum
 
 
+# Retrieval strategy I pick for a user question before fetching chunks.
 class QueryMode(str, Enum):
-    """Retrieval strategy for a user question."""
-
     SEMANTIC = "semantic"
     DOCUMENT_BEGINNING = "document_beginning"
     DOCUMENT_ENDING = "document_ending"
@@ -22,9 +21,8 @@ class QueryMode(str, Enum):
     WHOLE_DOCUMENT_SUMMARY = "whole_document_summary"
 
 
+# How I extract a direct answer from chunk text without calling the LLM.
 class PositionalStyle(str, Enum):
-    """How to extract a direct answer from a chunk of text."""
-
     FIRST_SENTENCE = "first_sentence"
     FIRST_PARAGRAPH = "first_paragraph"
     LAST_SENTENCE = "last_sentence"
@@ -124,18 +122,18 @@ _SECTION_NAME_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
+# Output of question classification — drives retrieval and direct answers.
 @dataclass(frozen=True)
 class RoutedQuery:
-    """Output of question classification — drives retrieval and direct answers."""
-
     mode: QueryMode
     positional_style: PositionalStyle | None = None
     page_number: int | None = None
     section_name: str | None = None
 
 
+# Classify a question into a retrieval mode using deterministic phrase rules.
+# Output: RoutedQuery with mode and optional page, section, or style hints.
 def route_question(question: str) -> RoutedQuery:
-    """Classify a question into a retrieval mode using deterministic rules."""
     q = question.strip()
     q_lower = q.lower()
 
@@ -195,8 +193,8 @@ def route_question(question: str) -> RoutedQuery:
     return RoutedQuery(mode=QueryMode.SEMANTIC)
 
 
+# Pull a section title from the question, or None when it is not section-scoped.
 def _extract_section_name(question: str) -> str | None:
-    """Pull a section title from the question, or None if not section-scoped."""
     q_lower = question.lower()
     if "section" not in q_lower and "first sentence of" not in q_lower:
         return None
@@ -211,23 +209,23 @@ def _extract_section_name(question: str) -> str | None:
     return None
 
 
+# Trim quotes and trailing punctuation from an extracted section title.
 def _clean_section_name(raw: str) -> str:
-    """Trim quotes and trailing punctuation from an extracted section title."""
     cleaned = raw.strip().strip("\"'")
     cleaned = re.sub(r"[?.!,;:]+$", "", cleaned).strip()
     return cleaned
 
 
+# Normalize a section title for fuzzy heading comparison.
 def normalize_section_name(name: str) -> str:
-    """Normalize a section title for fuzzy heading comparison."""
     normalized = re.sub(r"\s+", " ", name.strip().lower().strip("\"'"))
     normalized = re.sub(r"^#+\s*", "", normalized)
     normalized = normalized.rstrip(":.")
     return normalized
 
 
+# Return the first sentence from a chunk of text.
 def extract_first_sentence(text: str) -> str:
-    """Return the first sentence from a chunk of text."""
     stripped = text.strip()
     if not stripped:
         return ""
@@ -238,8 +236,8 @@ def extract_first_sentence(text: str) -> str:
     return first_line or stripped
 
 
+# Return the first paragraph (block separated by blank lines).
 def extract_first_paragraph(text: str) -> str:
-    """Return the first paragraph (block separated by blank lines)."""
     stripped = text.strip()
     if not stripped:
         return ""
@@ -250,8 +248,8 @@ def extract_first_paragraph(text: str) -> str:
     return stripped.split("\n", 1)[0].strip() or stripped
 
 
+# Return the last sentence from a chunk of text.
 def extract_last_sentence(text: str) -> str:
-    """Return the last sentence from a chunk of text."""
     stripped = text.strip()
     if not stripped:
         return ""
@@ -262,8 +260,8 @@ def extract_last_sentence(text: str) -> str:
     return lines[-1] if lines else stripped
 
 
+# Return the last paragraph (block separated by blank lines).
 def extract_last_paragraph(text: str) -> str:
-    """Return the last paragraph (block separated by blank lines)."""
     stripped = text.strip()
     if not stripped:
         return ""
@@ -274,26 +272,26 @@ def extract_last_paragraph(text: str) -> str:
     return lines[-1] if lines else stripped
 
 
+# Return a short excerpt from the start of a chunk (default max 300 chars).
 def extract_beginning_excerpt(text: str, *, max_len: int = 300) -> str:
-    """Return a short excerpt from the start of a chunk."""
     excerpt = extract_first_paragraph(text)
     if len(excerpt) <= max_len:
         return excerpt
     return excerpt[:max_len].rstrip() + "..."
 
 
+# Return a short excerpt from the end of a chunk (default max 300 chars).
 def extract_ending_excerpt(text: str, *, max_len: int = 300) -> str:
-    """Return a short excerpt from the end of a chunk."""
     excerpt = extract_last_paragraph(text)
     if len(excerpt) <= max_len:
         return excerpt
     return "..." + excerpt[-max_len:].lstrip()
 
 
+# Build a direct answer from one chunk without calling the LLM.
 def answer_from_positional_chunk(
     style: PositionalStyle, chunk_text: str
 ) -> str:
-    """Build a direct answer from one chunk without calling the LLM."""
     if style is PositionalStyle.FIRST_SENTENCE:
         return extract_first_sentence(chunk_text)
     if style is PositionalStyle.FIRST_PARAGRAPH:
@@ -307,8 +305,8 @@ def answer_from_positional_chunk(
     return chunk_text.strip()
 
 
+# Heuristic: short, title-like lines count as section headings.
 def looks_like_heading(line: str) -> bool:
-    """Heuristic: short, title-like lines are treated as section headings."""
     stripped = line.strip()
     if not stripped or len(stripped) > 150:
         return False
@@ -321,8 +319,8 @@ def looks_like_heading(line: str) -> bool:
     return len(stripped) < 100
 
 
+# Find a heading line in chunk text that matches the requested section name.
 def find_matching_heading_line(text: str, section_name: str) -> str | None:
-    """Find a heading line in chunk text that matches the requested section."""
     target = normalize_section_name(section_name)
     if not target:
         return None
@@ -339,10 +337,10 @@ def find_matching_heading_line(text: str, section_name: str) -> str | None:
     return None
 
 
+# Return the first sentence that appears after a section heading in chunk text.
 def extract_first_sentence_after_heading(
     chunk_text: str, heading_line: str
 ) -> str:
-    """Return the first sentence that appears after a section heading."""
     lower_text = chunk_text.lower()
     lower_heading = heading_line.lower()
     idx = lower_text.find(lower_heading)
@@ -353,10 +351,11 @@ def extract_first_sentence_after_heading(
     return extract_first_sentence(after)
 
 
+# Locate the chunk index and nearby chunks for a named section.
+# Output: (start_index, chunk slice) or None when no heading matches.
 def find_section_chunk_indices(
     chunks: list, section_name: str
 ) -> tuple[int, list] | None:
-    """Locate the chunk index and nearby chunks for a named section."""
     for index, chunk in enumerate(chunks):
         if find_matching_heading_line(chunk.chunk_text, section_name):
             end = min(index + 3, len(chunks))
@@ -364,8 +363,8 @@ def find_section_chunk_indices(
     return None
 
 
+# Pick first, last, and evenly spaced chunks for document-level summaries.
 def select_representative_chunks(chunks: list, *, max_chunks: int = 6) -> list:
-    """Pick first, last, and evenly spaced chunks for document-level summaries."""
     if not chunks:
         return []
     if len(chunks) <= max_chunks:

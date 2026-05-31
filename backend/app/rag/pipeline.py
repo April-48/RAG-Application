@@ -22,32 +22,28 @@ from app.rag.text_splitter import split_pages
 from app.repositories.chunk_repository import ChunkRepository
 
 
+# End-to-end RAG stages: ingest files into chunks, retrieve, generate answers.
 class RAGPipeline:
-    """End-to-end RAG stages: ingest files into chunks, retrieve, generate answers."""
 
+    # Wire embedder, LLM, chunk repo, and retrieval for this DB session.
     def __init__(
         self,
         db: Session,
         embedder: Embedder | None = None,
         llm: LLM | None = None,
     ) -> None:
-        """Wire embedder, LLM, chunk repo, and retrieval for this DB session."""
         self.db = db
         self.embedder = embedder or get_embedding_service()
         self.llm = llm or get_llm_service()
         self.chunks = ChunkRepository(db)
         self.retrieval = RetrievalService(db, embedder=self.embedder)
 
-    # --- Ingestion: read file, chunk, embed, save to DB ---
+    # Parse a file, chunk it, embed each chunk, and persist rows.
+    # Output: chunk count (0 when no text extracted).
+    # Raises on parse/embedding failure so the caller can mark the doc failed.
     def ingest(
         self, *, document_id: uuid.UUID, file_path: str | Path, file_type: str | None
     ) -> int:
-        """Parse, chunk, embed, and persist a document's chunks.
-
-        Returns the number of chunks stored (0 if no text could be extracted).
-        Raises on parse/embedding failures so the caller can mark the document
-        ``failed``.
-        """
         pages = extract_pages(file_path, file_type)
         chunks = split_pages(pages)
         if not chunks:
@@ -58,15 +54,15 @@ class RAGPipeline:
             chunk.embedding = embedding
         return self.chunks.create_many(document_id, chunks)
 
-    # --- Q&A: route question, pull chunks, ask the LLM when needed ---
+    # Route the question and return chunks plus optional direct-answer metadata.
     def retrieve(
         self, document_id: uuid.UUID, question: str, top_k: int | None = None
     ) -> RetrievalResult:
-        """Return routed chunks (and optional direct answer metadata)."""
         return self.retrieval.retrieve(document_id, question, top_k)
 
+    # Generate a grounded answer from a retrieval result.
+    # Returns skip_llm_message, direct_answer, empty string, or LLM output.
     def generate(self, question: str, result: RetrievalResult) -> str:
-        """Generate a grounded answer from a retrieval result."""
         if result.skip_llm_message:
             return result.skip_llm_message
         if result.direct_answer is not None:
@@ -75,10 +71,10 @@ class RAGPipeline:
             return ""
         return self.llm.generate(build_messages(question, result.chunks))
 
+    # Stream a grounded answer token-by-token from a retrieval result.
     def generate_stream(
         self, question: str, result: RetrievalResult
     ) -> Iterator[str]:
-        """Stream a grounded answer token-by-token."""
         if result.skip_llm_message:
             yield result.skip_llm_message
             return

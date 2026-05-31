@@ -1,10 +1,8 @@
 # RAG Document Q&A App
 
-This is a full-stack RAG web app for a homework project. Users can upload PDF, TXT, or DOCX files, pick one document, ask questions about it, and get AI answers backed by retrieved text chunks. The UI also shows source snippets so you can see where the answer came from.
+This is my RAG homework project. Users upload PDF/TXT/DOCX, pick one file, ask questions, and get answers with source snippets from that document.
 
-This version runs locally with Docker Compose. It is an **MVP**, not a production system — but the code is split into frontend, API, and backend layers so it is easier to explain and extend later.
-
-> Even though everything runs on one laptop today, the project separates the UI, API, database, cache, file storage, and RAG logic. That makes it possible to scale the API, move ingestion to workers, switch to S3 storage, or upgrade vector search later.
+It runs locally with Docker Compose. It is an MVP, not a production app — but I kept frontend, API, and backend in separate folders so the architecture is easy to walk through.
 
 ## Features
 
@@ -34,7 +32,7 @@ This version runs locally with Docker Compose. It is an **MVP**, not a productio
 
 ## Architecture Overview
 
-The repo has three logical layers. In the MVP they mostly run in one Python process, but the folders are separated on purpose:
+The repo has three logical layers. In the MVP they run in one Python process, but the folder boundaries are intentional:
 
 1. **Frontend** (`frontend/`) — React UI only. Calls the API over HTTP/SSE.
 2. **API layer** (`middleware/`) — FastAPI routes, JWT auth, request validation, HTTP errors.
@@ -104,7 +102,7 @@ Set `OPENAI_API_KEY` (or `LLM_BASE_URL`) before testing chat.
 4. Open Chat and select the document.
 5. Ask a question that the document can answer. Show streaming response and sources.
 6. With Redis running, ask the **same question twice** to show cache hit (see checklist).
-7. Optional: sign up a second user and confirm the first user's document id returns **404**.
+7. Optional: sign up as a second user and confirm that the first user's document returns **404** — not 403, not the document.
 
 ## Engineering Docs
 
@@ -125,7 +123,7 @@ Set `OPENAI_API_KEY` (or `LLM_BASE_URL`) before testing chat.
 - [0002 — PostgreSQL + pgvector](docs/adr/0002-postgres-pgvector.md)
 - [0003 — Single-document RAG scope](docs/adr/0003-single-document-rag-scope.md)
 - [0004 — Background ingestion](docs/adr/0004-async-ingestion-backgroundtasks.md)
-- [0005 — Redis answer cache](docs/adr/0005-redis-answer-cache.md)
+- [0005 — Redis cache + chat rate limit](docs/adr/0005-redis-answer-cache.md)
 - [0006 — Alembic migrations](docs/adr/0006-alembic-migrations.md)
 - [0007 — Local storage vs S3](docs/adr/0007-local-storage-vs-s3.md)
 
@@ -148,7 +146,7 @@ cd frontend
 npm run build
 ```
 
-Tests do **not** call real LLM or embedding APIs. The full upload → chat → sources flow is checked manually with the [demo checklist](docs/engineering-notes/demo-checklist.md).
+Tests do not call real LLM or embedding APIs — everything external is mocked. The full upload → chat → sources flow is checked manually with the [demo checklist](docs/engineering-notes/demo-checklist.md).
 
 ## Known Limitations
 
@@ -158,12 +156,12 @@ This is an MVP, not a production RAG platform.
 - Ingestion uses FastAPI `BackgroundTasks`, not a real job queue
 - Local disk storage does not work well with multiple API servers
 - Scanned/image-only PDFs need OCR (not implemented)
-- Redis cache may serve stale answers until TTL after re-ingest
-- Switching embedding dimensions requires a migration and re-ingest
+- The answer cache only expires by TTL — it is not cleared when document chunks change
+- Switching embedding dimensions (e.g. local 384 → OpenAI 1536) requires a new migration and full re-ingest
 - Redis chat rate limiting is optional and fail-open; not real abuse prevention
 
 **Full list:** [Known Limitations](docs/engineering-notes/known-limitations.md)
 
-## Future Improvements
+## Future improvements
 
-See [System Design](docs/system_design.md) and [Achieved vs Future Work](docs/engineering-notes/achieved-and-future-work.md).
+How I would scale this (workers, object storage, load-balanced API, vector search) is in [System Design](docs/system_design.md#future-scalability-focus).

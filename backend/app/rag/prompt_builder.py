@@ -19,8 +19,8 @@ SYSTEM_PROMPT = (
 )
 
 
+# Format retrieved chunks into labeled text blocks for the LLM prompt.
 def build_context(chunks: list[DocumentChunk]) -> str:
-    """Format retrieved chunks into labeled text blocks for the LLM prompt."""
     parts: list[str] = []
     for chunk in chunks:
         if chunk.page_number is not None:
@@ -31,8 +31,9 @@ def build_context(chunks: list[DocumentChunk]) -> str:
     return "\n\n".join(parts)
 
 
+# Build system + user messages telling the LLM to answer from context only.
+# Output: OpenAI-style message list ready for llm.generate or generate_stream.
 def build_messages(question: str, chunks: list[DocumentChunk]) -> list[dict[str, str]]:
-    """Build system + user messages telling the LLM to answer from context only."""
     context = build_context(chunks)
     user_content = (
         f"Context:\n{context}\n\n"

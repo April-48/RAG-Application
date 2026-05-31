@@ -30,28 +30,27 @@ from app.repositories.chunk_repository import ChunkRepository
 SUMMARY_MAX_CHUNKS = 6
 
 
+# Chunks plus optional direct answer or a no-LLM fallback message.
 @dataclass(frozen=True)
 class RetrievalResult:
-    """Chunks plus optional direct answer or no-LLM fallback message."""
-
     chunks: list[DocumentChunk]
     routed: RoutedQuery
     direct_answer: str | None = None
     skip_llm_message: str | None = None
 
 
+# I route the question, then fetch chunks via metadata rules or pgvector search.
 class RetrievalService:
-    """Route the question, then fetch chunks via metadata or pgvector search."""
 
+    # Wire chunk repo and embedder for retrieval.
     def __init__(self, db: Session, embedder: Embedder | None = None) -> None:
-        """Wire chunk repo and embedder for retrieval."""
         self.chunks = ChunkRepository(db)
         self.embedder = embedder or get_embedding_service()
 
+    # Classify the question and return chunks with routing metadata.
     def retrieve(
         self, document_id: uuid.UUID, question: str, top_k: int | None = None
     ) -> RetrievalResult:
-        """Return chunks and routing metadata for a question."""
         routed = route_question(question)
 
         if routed.mode is QueryMode.DOCUMENT_BEGINNING:
@@ -67,6 +66,7 @@ class RetrievalService:
 
         return self._retrieve_semantic(document_id, question, routed, top_k)
 
+    # Fetch the first chunk and build a direct positional answer when possible.
     def _retrieve_document_beginning(
         self, document_id: uuid.UUID, routed: RoutedQuery
     ) -> RetrievalResult:
@@ -80,6 +80,7 @@ class RetrievalService:
             direct_answer=answer_from_positional_chunk(style, first.chunk_text),
         )
 
+    # Fetch the last chunk and build a direct positional answer when possible.
     def _retrieve_document_ending(
         self, document_id: uuid.UUID, routed: RoutedQuery
     ) -> RetrievalResult:
@@ -97,6 +98,7 @@ class RetrievalService:
             direct_answer=answer,
         )
 
+    # Fetch chunks for a specific page number, or fall back to semantic search.
     def _retrieve_page_lookup(
         self,
         document_id: uuid.UUID,
@@ -125,6 +127,7 @@ class RetrievalService:
             )
         return RetrievalResult(chunks=page_chunks, routed=routed)
 
+    # Fetch chunks for a named section and maybe return a direct first sentence.
     def _retrieve_section_lookup(
         self, document_id: uuid.UUID, routed: RoutedQuery
     ) -> RetrievalResult:
@@ -163,6 +166,7 @@ class RetrievalService:
 
         return RetrievalResult(chunks=section_chunks, routed=routed)
 
+    # Pick representative chunks across the document for summary-style questions.
     def _retrieve_summary(
         self, document_id: uuid.UUID, routed: RoutedQuery
     ) -> RetrievalResult:
@@ -172,6 +176,8 @@ class RetrievalService:
         )
         return RetrievalResult(chunks=representative, routed=routed)
 
+    # Embed the question and run pgvector similarity search within one document.
+    # Returns empty chunks with WEAK_EVIDENCE_MESSAGE when similarity is too low.
     def _retrieve_semantic(
         self,
         document_id: uuid.UUID,

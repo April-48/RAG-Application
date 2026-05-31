@@ -15,17 +15,18 @@ from app.models.chat_session import ChatSession
 from app.models.message import Message
 
 
+# Read/write chat_sessions and messages for one user + document pair.
 class ChatRepository:
-    """Read/write chat_sessions and messages for one user + document pair."""
 
+    # Store the DB session this repo uses for every query.
     def __init__(self, db: Session) -> None:
-        """Store the DB session this repo uses for all queries."""
         self.db = db
 
+    # Find an existing session for this user and document.
+    # Output: ChatSession row or None if no conversation started yet.
     def get_session(
         self, *, user_id: uuid.UUID, document_id: uuid.UUID
     ) -> ChatSession | None:
-        """Find existing session for this user and document, or None."""
         return self.db.scalar(
             select(ChatSession)
             .where(
@@ -35,10 +36,10 @@ class ChatRepository:
             .order_by(ChatSession.created_at.asc())
         )
 
+    # Return the session for (user, doc), creating one on the first message.
     def get_or_create_session(
         self, *, user_id: uuid.UUID, document_id: uuid.UUID
     ) -> ChatSession:
-        """Return the session for (user, doc), creating one on first message."""
         session = self.get_session(user_id=user_id, document_id=document_id)
         if session is not None:
             return session
@@ -48,6 +49,8 @@ class ChatRepository:
         self.db.refresh(session)
         return session
 
+    # Append one chat message to a session.
+    # Assistant rows may carry sources_json with chunk citations.
     def add_message(
         self,
         *,
@@ -56,7 +59,6 @@ class ChatRepository:
         content: str,
         sources_json: Any | None = None,
     ) -> Message:
-        """Append one chat message — assistant rows can carry sources_json citations."""
         message = Message(
             session_id=session_id,
             role=role,
@@ -68,8 +70,8 @@ class ChatRepository:
         self.db.refresh(message)
         return message
 
+    # List the full conversation for a session, oldest first — GET /history.
     def list_messages(self, session_id: uuid.UUID) -> list[Message]:
-        """Full conversation for a session, oldest first — powers GET /history."""
         return list(
             self.db.scalars(
                 select(Message)

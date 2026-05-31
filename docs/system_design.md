@@ -1,25 +1,17 @@
 # System Design
 
-This document explains how the RAG Document Q&A app is built today, and how it could grow beyond a local MVP.
+This document explains how my RAG app is built and how it could scale beyond a local MVP.
 
-It covers:
+For a shorter “what works / what’s missing” list, see [achieved-and-future-work.md](engineering-notes/achieved-and-future-work.md).
 
-1. What runs with Docker Compose today
-2. How the frontend, API, and backend layers are separated
-3. How the system could scale later
+## How this maps to the assignment
 
-For a shorter checklist of what works vs what is missing, see [achieved-and-future-work.md](engineering-notes/achieved-and-future-work.md).
-
-## How this maps to grading
-
-| Area | Where to look |
-| ---- | ------------- |
-| **App quality** | Signup/login, upload, status polling, chat, sources, file download — [README demo flow](../README.md#demo-flow) |
-| **System design / separation** | Three layers below + [ADR 0001](adr/0001-three-layer-architecture.md) |
-| **Scalability** | Scalability section below + ADRs 0004–0007 |
-| **UI/UX** | React + Tailwind; streaming chat, source panel — see `frontend/` |
-
-Submission docs: this file, [achieved/future work](engineering-notes/achieved-and-future-work.md), [known limitations](engineering-notes/known-limitations.md), and the [GitHub repo](https://github.com/April-48/RAG-Application).
+| Topic | Where to look |
+| ----- | ------------- |
+| RAG pipeline (upload → answer) | [README demo flow](../README.md#demo-flow) |
+| Three-layer architecture | Layers below + [ADR 0001](adr/0001-three-layer-architecture.md) |
+| Scaling beyond local | Section below + ADRs 0004–0007 |
+| UI | React app in `frontend/` |
 
 ## Layers
 
@@ -29,251 +21,138 @@ Submission docs: this file, [achieved/future work](engineering-notes/achieved-an
 │ (React UI) │  ◀───────────────   │  (FastAPI)   │  ◀─────────────────────  │  (logic)  │
 └────────────┘                     └──────────────┘                          └─────┬─────┘
                                                                                    │
-                                                       ┌───────────────┬───────────┴───────┬───────────────┐
-                                                       │               │                   │               │
-                                                 ┌─────▼─────┐   ┌──────▼──────┐     ┌──────▼──────┐  ┌─────▼─────┐
-                                                 │  Postgres │   │ file storage│     │    Redis    │  │    LLM    │
-                                                 │ + pgvector│   │  uploads/   │     │answer cache │  │ provider  │
-                                                 └───────────┘   └─────────────┘     └─────────────┘  └───────────┘
+                                                 ┌───────────────┬───────────┴───────────┐
+                                                 │               │                       │
+                                           ┌─────▼─────┐   ┌──────▼──────┐         ┌──────▼──────┐
+                                           │  Postgres │   │ file storage│         │    Redis    │
+                                           │ + pgvector│   │  uploads/   │         │cache/limit  │
+                                           └───────────┘   └─────────────┘         └─────────────┘
+                                                                                         │
+                                                                                   ┌─────▼─────┐
+                                                                                   │    LLM    │
+                                                                                   └───────────┘
 ```
 
-- **frontend/** — React UI only. Pages, forms, polling, SSE chat. No business logic.
-- **middleware/** — FastAPI **API layer**: routes, JWT, validation, HTTP errors. Calls the backend package.
-- **backend/** (import name `app`) — **core layer**: models, repos, services, RAG pipeline, storage, cache, LLM. Installed with `pip install -e ./backend` and imported in the same process as FastAPI today.
+- **frontend/** — React UI only (upload, chat, sources). Calls the API over HTTP/SSE.
+- **middleware/** — FastAPI routes, JWT, validation, HTTP errors.
+- **backend/** (package `app`) — DB, RAG pipeline, storage, Redis, LLM. Installed with `pip install -e ./backend` and imported in the same process today.
 
-## What runs locally today
+## What runs locally
 
-On one machine (Docker Compose or host dev):
+The MVP runs locally via Docker Compose (or host dev with db/redis in Docker). It has a React frontend, a FastAPI middleware layer, a Python backend package, Postgres with pgvector, optional Redis, and local file storage. Ingestion runs in the background after upload; the UI polls document status about every 5 seconds.
 
-- **React frontend** — auth, upload, document list with status polling, chat with SSE and a source panel
-- **FastAPI middleware** — routes, JWT, validation
-- **Backend `app` package** — `rag/pipeline.py` runs loader → split → embed → retrieve → prompt → LLM
-- **Postgres + pgvector** — users, documents, chunks (384-dim vectors by default), chat tables
-- **Alembic** — schema migrations in `backend/alembic`
-- **Redis answer cache** — optional; speeds up repeat questions
-- **Redis chat rate limit** — optional; caps ask routes (default 10/min per user)
-- **Local file storage** — `backend/storage/uploads/{user_id}/{document_id}/`
-- **Background ingestion** — FastAPI `BackgroundTasks` today; Celery/RQ workers later
-- **Frontend polling** — `GET /documents` every ~5s while any doc is in progress
-- **Swappable models** — `EMBEDDING_PROVIDER` and `LLM_BASE_URL` pick the implementation via factory functions
+Default embeddings use local MiniLM at **384** dimensions. Switching to OpenAI (1536) needs a migration and re-ingest.
 
-**Embedding note:** default local model is `all-MiniLM-L6-v2` at **384** dimensions. OpenAI `text-embedding-3-small` uses **1536**. Switching requires a migration and re-ingesting all documents.
+## Scalability (MVP → production)
 
-## Scalability beyond local development
+Right now the whole app runs on one laptop with Docker Compose. That is enough for the homework demo, but the main parts are split so they can scale on their own later.
 
-The app runs on Docker Compose today, but each part is separated so it can scale later.
+| Component | MVP today | How I would scale it |
+| --------- | --------- | -------------------- |
+| API traffic | One FastAPI process | Run several copies behind a load balancer. JWT auth is stateless, so any instance can handle a request. |
+| Ingestion | `BackgroundTasks` in the API | Move to Redis + Celery/RQ workers. Upload would only enqueue a job; workers call the same `ingest_document()` function I already have. |
+| Files | Local disk under `backend/storage/uploads/` | Swap `StorageBackend` to S3 (or similar). Routes and ingestion code would not need to change much. |
+| Vector search | pgvector in Postgres | Add pgvector indexes first. If chunk count gets very large, consider a dedicated vector DB. |
+| Frontend | Vite dev server | Build static files and host on a CDN. |
 
-| Concern | What we have now | What I would do in production |
-| ------- | ---------------- | ----------------------------- |
-| More API traffic | One FastAPI container; JWT auth | Multiple API instances behind a load balancer |
-| Slow uploads | Upload returns fast; ingest in BackgroundTasks | Redis queue + Celery/RQ workers |
-| Many/large files | Local disk + `StorageBackend` interface | S3 or similar object storage |
-| More vector data | Postgres + pgvector, filtered by document | pgvector indexes or a dedicated vector DB |
-| Repeat LLM calls | Redis answer cache + rate limit | Redis cluster, better rate limiting |
-| Schema changes | Alembic migrations | Run migrations in CI before deploy |
-| User isolation | `owner_id` on documents | RBAC, workspaces, audit logs |
-| Frontend | Vite dev server in Docker | Static build on a CDN |
-| Database size | One Postgres container | Managed Postgres, read replicas, pooling |
+The same Redis service I use for cache and rate limiting could also act as the job queue broker later, so I would not need a totally new piece of infrastructure for workers.
 
-How each layer could scale:
-
-- **Frontend** — build static files and serve from a CDN
-- **API** — mostly stateless (JWT + Postgres/Redis), so you can run multiple copies
-- **Ingestion** — already off the upload path; swap BackgroundTasks for workers using the same `ingest_document()` function
-- **Files** — go through `StorageBackend`; S3 is a backend swap, not a full rewrite
-- **Vectors** — pgvector works for MVP; add indexes or a vector DB at larger scale
-- **Redis** — cache today; same Redis can back queues and job status later
-- **Security** — every document has `owner_id`; retrieval always filters by authorized `document_id`
-
-### Production target (not deployed)
+### Target architecture (not built)
 
 ```
-                    ┌─────────────┐
-                    │ CDN / static│  ←  frontend build
-                    │   frontend  │
-                    └──────┬──────┘
-                           │ HTTPS
-                    ┌──────▼──────┐
-                    │Load balancer│
-                    └──────┬──────┘
-              ┌────────────┼────────────┐
-        ┌─────▼─────┐            ┌─────▼─────┐
-        │ FastAPI   │            │ FastAPI   │
-        │ instance  │            │ instance  │
-        └─────┬─────┘            └─────┬─────┘
-              │                        │
-              └────────────┬───────────┘
-                           │
-     ┌─────────────────────┼─────────────────────┐
-     │                     │                     │
-┌────▼────┐          ┌─────▼─────┐         ┌─────▼─────┐
-│ Postgres│          │   Redis   │         │ S3 / obj  │
-│+pgvector│          │cache+queue│         │  storage  │
-└─────────┘          └─────┬─────┘         └───────────┘
-                           │
-                     ┌─────▼─────┐
-                     │  Celery/  │
-                     │ RQ workers│
-                     └───────────┘
+CDN (static frontend) → load balancer → FastAPI (×N)
+                              ↓
+              Postgres+pgvector   Redis   S3
+                              ↓
+                       Celery/RQ workers
 ```
 
-See ADRs [0004](adr/0004-async-ingestion-backgroundtasks.md), [0005](adr/0005-redis-answer-cache.md), [0006](adr/0006-alembic-migrations.md), [0007](adr/0007-local-storage-vs-s3.md).
+More background: ADRs [0004](adr/0004-async-ingestion-backgroundtasks.md)–[0007](adr/0007-local-storage-vs-s3.md).
 
 ## Data model
 
-- **User** — owns documents, chat sessions, permissions (future)
-- **Document** — has `owner_id`, status (`uploaded` / `processing` / `ready` / `failed`), chunks. `filename` is the original name; `display_name` is an optional UI label (`PATCH` does not rename the file on disk)
-- **DocumentChunk** — chunk text + pgvector `embedding` (384 default; 1536 for OpenAI)
+- **User** — owns documents and chat sessions
+- **Document** — `owner_id`, status (`uploaded` / `processing` / `ready` / `failed`), optional `display_name`
+- **DocumentChunk** — text + embedding vector
 - **ChatSession** — one per (user, document)
-- **Message** — role, content; assistant messages store `sources_json`
-- **DocumentPermission** — future sharing (schema only in MVP)
+- **Message** — user/assistant text; assistant rows store `sources_json`
+- **DocumentPermission** — table exists; not used in MVP
 
-## User document isolation
+## Access control
 
-1. Every document has an `owner_id`.
-2. Repositories only expose owner-scoped queries.
-3. Middleware checks JWT; services raise `DocumentNotFoundError` for missing or unauthorized docs (always `404`).
-4. Retrieval, chat, and history filter by `document_id` and the logged-in user.
-5. **File download** — `GET /documents/{id}/file` returns the file after the same checks. Clients never see `storage_path`.
+Documents have an `owner_id`. Repositories only query by owner. Other users get **404** (not 403) so the API does not leak whether a document id exists. Retrieval and chat always filter by the selected `document_id`.
 
-## RAG upload pipeline (ingestion)
+## Ingestion flow
 
-1. User uploads a file. Middleware checks auth and file type, then calls `document_service.upload`.
-2. File is saved under `backend/storage/uploads/{user_id}/{document_id}/`. A row is created with status `uploaded`. **Upload returns immediately.**
-3. A background task runs `ingestion_worker.ingest_document`:
-   - status → `processing`
-   - `RAGPipeline.ingest`: extract text (PDF/TXT/DOCX) → split (1000 chars, 200 overlap) → embed → save chunks
-   - status → `ready` or `failed`
-4. Frontend polls `GET /documents` and watches status change.
+1. Upload → save file → status `uploaded` → return immediately
+2. Background task → `processing` → parse/chunk/embed → `ready` or `failed`
+3. UI polls `GET /documents`
 
-**Later:** replace BackgroundTasks with Redis + Celery/RQ workers. The frontend poller can stay the same because status still lives on the `documents` row.
+## Q&A flow
 
-## RAG question-answering pipeline
-
-1. User asks a question about a document.
-2. Middleware checks ownership and that status is `ready`.
-3. **Cache check** — Redis key `rag:answer:{user_id}:{document_id}:{sha256(normalized_question)}`. On hit, return cached answer + sources (no retrieval, no LLM).
-4. On miss, **hybrid retrieval** runs (see next section).
-5. **Generation** — if retrieval returns `direct_answer` or `skip_llm_message`, skip the LLM. Otherwise build a prompt and call the LLM (JSON or SSE stream).
-6. Save answer + sources to chat history. On success, write to Redis cache. SSE shape: `token` → `sources` → `done`.
+1. Check document is owned and `ready`
+2. Optional Redis cache lookup
+3. Hybrid retrieval (below)
+4. LLM answer (or skip LLM for direct extraction / weak evidence)
+5. Save history + sources; cache successful answers
 
 ## Hybrid RAG retrieval
 
-Before calling the LLM, `query_router.route_question()` picks a **QueryMode**. `RetrievalService.retrieve()` runs the matching strategy.
+Before the LLM, `query_router` picks a mode. This is simple rule-based routing plus pgvector — not BM25 fusion.
 
-This is **not** BM25 + vector fusion. It is simple phrase rules plus metadata lookup, with pgvector for the default semantic path.
+| Mode | Example question | LLM? |
+| ---- | ---------------- | ---- |
+| `document_beginning` | first sentence of the doc | Often no |
+| `document_ending` | last paragraph | Often no |
+| `page_lookup` | what is on page 3 | Usually yes |
+| `section_lookup` | Methods section | Depends |
+| `whole_document_summary` | summarize this document | Yes |
+| `semantic` (default) | normal factual questions | Yes, if similarity ≥ 0.32 |
 
-| QueryMode | Example questions | What it does | LLM |
-| --------- | ----------------- | ------------ | --- |
-| `DOCUMENT_BEGINNING` | “first sentence of the document” | First chunk; extract text directly | Skipped when possible |
-| `DOCUMENT_ENDING` | “last paragraph”, “how does it end” | Last chunk; extract text directly | Skipped when possible |
-| `PAGE_LOOKUP` | “what is on page 3?” | Chunks with matching `page_number` | Used unless page not found |
-| `SECTION_LOOKUP` | “first sentence of Methods section” | Match section heading in chunks | Often skipped for first sentence |
-| `WHOLE_DOCUMENT_SUMMARY` | “summarize this document” | Pick up to 6 representative chunks | Used — LLM summarizes |
-| `SEMANTIC` (default) | general questions | pgvector search, top-k = `RETRIEVAL_TOP_K` (default 5) | Used if evidence is strong enough |
+Sources shown in the UI come from **retrieved chunks**, not from parsing the LLM output.
 
-### Similarity threshold (SEMANTIC mode)
+## Redis
 
-Semantic search uses cosine similarity (`1 - cosine_distance`). If the best score is below **`RETRIEVAL_MIN_SIMILARITY`** (default **0.32**), the app returns a fixed message and **skips the LLM**:
+**Cache** (`ENABLE_REDIS_CACHE`): key `rag:answer:{user}:{doc}:{hash(question)}`, TTL 3600s default.
 
-> “I could not find enough evidence in the uploaded document to answer this question.”
+**Rate limit** (`ENABLE_RATE_LIMIT`): 10 asks/min per user on chat routes; HTTP 429 if exceeded.
 
-Tune with env var `RETRIEVAL_MIN_SIMILARITY`.
+Both are optional and fail-open.
 
-### Direct extraction and skipping the LLM
-
-- **`direct_answer`** — beginning/ending modes pull text from chunks without calling the LLM.
-- **`skip_llm_message`** — page/section not found, or weak semantic match; user gets a clear message instead of a guessed answer.
-
-### Source grounding
-
-Retrieval returns **`sources`**: `{chunk_index, page_number, chunk_text}` for each chunk used. These show up in the UI Source panel and in `messages.sources_json`. The LLM sees labeled chunks in its prompt, but user-facing citations come from retrieval, not from parsing the model output.
-
-### Hybrid retrieval limits (MVP)
-
-- Routing uses phrase/regex rules — odd wording may fall back to SEMANTIC.
-- Page lookup needs page metadata (PDF/DOCX). TXT has no pages.
-- Section lookup uses simple heading matching.
-- Summary mode uses a subset of chunks, not the full file.
-
-## Redis answer cache
-
-- **Key:** `rag:answer:{user_id}:{document_id}:{sha256(normalized_question)}` (`normalized` = strip + lowercase for the key only)
-- **Value:** JSON `{"answer": "...", "sources": [...]}`
-- **TTL:** `CACHE_TTL_SECONDS` (default 3600)
-- **Optional:** `ENABLE_REDIS_CACHE`. If Redis is off or errors, treat as cache miss — chat still works.
-- **Not cached:** LLM errors and insufficient-context messages
-- **Isolation:** keys include user id and document id
-
-## Redis chat rate limit
-
-Only on `POST /chat/{document_id}/ask` and `/ask/stream`. History, upload, and auth are not limited.
-
-- **Key:** `rate:user:{user_id}:chat:{yyyyMMddHHmm}` (UTC minute)
-- **Algorithm:** `INCR` + `EXPIRE 60`
-- **Default cap:** 10/min when `ENABLE_RATE_LIMIT=true`
-- **On exceed:** HTTP `429` with retry message
-- **Fail-open:** if Redis is down, allow the request
-
-## File storage layout
+## File storage
 
 ```
-backend/storage/uploads/
-└── {user_id}/
-    └── {document_id}/
-        └── <original file>
+backend/storage/uploads/{user_id}/{document_id}/<file>
 ```
 
-Callers use `StorageBackend` (`storage/base.py`). Local disk now; S3 later without changing route code.
+Uses `StorageBackend` so S3 can replace local disk later.
 
-## Current limitations
+## MVP limits (honest)
 
-- File types: PDF, TXT, DOCX only
+- Single document per chat
+- BackgroundTasks, not a real queue
+- Local disk only
 - No OCR for scanned PDFs
-- `.doc` not supported; DOCX parsing is basic
-- BackgroundTasks ingestion (not durable)
-- Local disk storage only
-- One chat session per (user, document)
-- Owner-only access (`document_permissions` unused)
-- Rate limiting is optional MVP tooling, not real abuse prevention
-- Query routing is rule-based, not learned
-- No monitoring or audit logs
+- Rule-based query router
+- Owner-only access
 
-## Future work
+More detail: [known-limitations.md](engineering-notes/known-limitations.md).
 
-Scaling paths are above. Other product gaps:
+## Future (scalability focus)
 
-- Shared documents (schema exists; routes/UI not wired)
-- Multi-document chat
-- OCR for scanned PDFs
-- More file types
-- Cache invalidation on re-ingest
-- Better ops (monitoring, audit logs)
+The most important next steps are reliability and scalability, not new features.
 
-### Multi-document Q&A (deferred)
+**Ingestion workers.** Upload already returns immediately and only schedules `ingest_document()`. That boundary is ready for a queue: on upload I would push a job to Redis, and separate worker processes would run the same ingestion code. Jobs would survive API restarts instead of dying with BackgroundTasks. The frontend could keep polling `documents.status` the same way.
 
-**Today:** one document per chat session.
+**Object storage.** Files today live on local disk, which is fine for one container but not for multiple API servers. I already read and write through `StorageBackend`, so moving to S3 would mostly mean implementing a new backend class, not rewriting upload or chat routes.
 
-**Later:** search across a document set, new cache key shape, updated session model, UI to pick multiple docs.
+**Horizontal API scaling.** The FastAPI layer does not store session state in memory — it uses JWT plus Postgres/Redis. That means I can run more API containers behind a load balancer without changing the RAG logic inside `app`.
 
-The MVP does **not** change retrieval scope, cache keys, or chat routing for multi-doc support.
+**Vector search at scale.** pgvector inside Postgres is enough for my demo documents. If users uploaded much larger corpora, I would add pgvector indexes (IVFFlat/HNSW) or, at very large scale, move vectors to a dedicated store while keeping document metadata in Postgres.
+
+Things like multi-document chat, OCR, or shared folders are useful product ideas, but they are separate from this core scaling path.
 
 ## Related docs
 
 - [achieved-and-future-work.md](engineering-notes/achieved-and-future-work.md)
-- [setup.md](setup.md)
-- [api_design.md](api_design.md)
-- [adr/](adr/)
-- [engineering-notes/](engineering-notes/)
-
-### ADR index
-
-| ADR | Topic |
-| --- | ----- |
-| [0001](adr/0001-three-layer-architecture.md) | Three-layer architecture |
-| [0002](adr/0002-postgres-pgvector.md) | PostgreSQL + pgvector |
-| [0003](adr/0003-single-document-rag-scope.md) | Single-document scope |
-| [0004](adr/0004-async-ingestion-backgroundtasks.md) | BackgroundTasks ingestion |
-| [0005](adr/0005-redis-answer-cache.md) | Redis answer cache |
-| [0006](adr/0006-alembic-migrations.md) | Alembic migrations |
-| [0007](adr/0007-local-storage-vs-s3.md) | Local storage vs S3 |
+- [setup.md](setup.md) · [api_design.md](api_design.md) · [adr/](adr/)

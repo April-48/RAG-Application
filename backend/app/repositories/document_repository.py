@@ -14,13 +14,15 @@ from app.models.document import Document
 from app.models.document_permission import DocumentPermission
 
 
+# CRUD and owner-scoped lookups for the documents table.
 class DocumentRepository:
-    """CRUD and owner-scoped lookups for the documents table."""
 
+    # Store the DB session this repo uses for every query.
     def __init__(self, db: Session) -> None:
-        """Store the DB session this repo uses for all queries."""
         self.db = db
 
+    # Insert a new document row right after upload.
+    # Status is usually 'uploaded' until background ingestion runs.
     def create(
         self,
         *,
@@ -32,7 +34,6 @@ class DocumentRepository:
         visibility: str = "private",
         status: str = "uploaded",
     ) -> Document:
-        """Insert a new document row right after upload (status usually 'uploaded')."""
         document = Document(
             id=document_id,
             owner_id=owner_id,
@@ -47,8 +48,8 @@ class DocumentRepository:
         self.db.refresh(document)
         return document
 
+    # List all documents owned by this user, newest first — dashboard view.
     def list_by_owner(self, owner_id: uuid.UUID) -> list[Document]:
-        """All documents owned by this user, newest first — dashboard list."""
         return list(
             self.db.scalars(
                 select(Document)
@@ -57,22 +58,23 @@ class DocumentRepository:
             )
         )
 
+    # Fetch a document only if it belongs to owner_id — main access gate.
+    # Output: Document row or None when id exists but owner differs.
     def get_owned(
         self, document_id: uuid.UUID, owner_id: uuid.UUID
     ) -> Document | None:
-        """Fetch a document only if it belongs to owner_id — main access gate."""
         return self.db.scalar(
             select(Document).where(
                 Document.id == document_id, Document.owner_id == owner_id
             )
         )
 
+    # Lookup by id only — caller must verify ownership before exposing to API.
     def get_by_id(self, document_id: uuid.UUID) -> Document | None:
-        """Lookup by id only — caller must check ownership before returning to API."""
         return self.db.get(Document, document_id)
 
+    # True if user has a row in document_permissions (future sharing — MVP unused).
     def has_permission(self, document_id: uuid.UUID, user_id: uuid.UUID) -> bool:
-        """True if user has a row in document_permissions (future sharing — unused in MVP)."""
         return (
             self.db.scalar(
                 select(DocumentPermission.id).where(
@@ -83,23 +85,23 @@ class DocumentRepository:
             is not None
         )
 
+    # Set lifecycle status (uploaded / processing / ready / failed) and save.
     def update_status(self, document: Document, status: str) -> Document:
-        """Set lifecycle status (uploaded / processing / ready / failed) and save."""
         document.status = status
         self.db.commit()
         self.db.refresh(document)
         return document
 
+    # Save the user-editable display name — does not rename the file on disk.
     def update_display_name(
         self, document: Document, display_name: str
     ) -> Document:
-        """Save the user-editable UI label — does not rename the file on disk."""
         document.display_name = display_name
         self.db.commit()
         self.db.refresh(document)
         return document
 
+    # Remove the document row — chunks and messages cascade per FK rules.
     def delete(self, document: Document) -> None:
-        """Remove the document row (chunks/messages cascade per FK rules)."""
         self.db.delete(document)
         self.db.commit()

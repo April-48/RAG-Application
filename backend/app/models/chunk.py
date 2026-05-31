@@ -23,9 +23,9 @@ if TYPE_CHECKING:
 EMBEDDING_DIM = get_settings().embedding_dim
 
 
+# ORM row for one text slice plus its pgvector embedding.
+# I always scope retrieval by document_id so chunks never cross documents.
 class DocumentChunk(Base):
-    """Text slice from a document plus its vector embedding for similarity search."""
-
     __tablename__ = "document_chunks"
 
     id: Mapped[uuid.UUID] = mapped_column(

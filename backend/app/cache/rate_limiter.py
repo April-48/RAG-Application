@@ -20,24 +20,26 @@ logger = logging.getLogger("app.cache.rate_limiter")
 RATE_KEY_PREFIX = "rate:user"
 
 
+# Outcome of a chat rate-limit check — allowed flag plus optional retry_after.
 @dataclass(frozen=True)
 class RateLimitResult:
-    """Outcome of a chat rate-limit check."""
-
     allowed: bool
     retry_after: int | None = None
 
 
+# Redis INCR counter per user per calendar minute for chat requests.
+# I fail open when Redis is down so chat still works.
 class ChatRateLimiter:
-    """Redis INCR counter per user per calendar minute."""
 
+    # Use an injected Redis client in tests; otherwise get_redis_rate_limit_client().
     def __init__(self, client: Any | None = None) -> None:
         self._client = (
             client if client is not None else get_redis_rate_limit_client()
         )
 
+    # Return whether this chat request is under the per-minute cap.
+    # Output: RateLimitResult with allowed=True, or retry_after when blocked.
     def check(self, user_id: uuid.UUID) -> RateLimitResult:
-        """Return whether this chat request is allowed under the per-minute cap."""
         settings = get_settings()
         if not settings.enable_rate_limit:
             return RateLimitResult(allowed=True)

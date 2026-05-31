@@ -5,49 +5,63 @@ codes. Keeps the backend usable outside of a web app if we ever need that.
 """
 
 
+# Base class for signup, login, and JWT problems.
+# Middleware maps subclasses to 401/409-style responses.
 class AuthError(Exception):
-    """Base for login/signup/token problems."""
+    pass
 
 
+# I raise this when signup hits an email that already exists.
 class EmailAlreadyExistsError(AuthError):
-    """Signup email already taken."""
+    pass
 
 
+# I raise this when login gets a bad email/password pair.
 class InvalidCredentialsError(AuthError):
-    """Wrong email or password on login."""
+    pass
 
 
+# I raise this when a JWT is missing, expired, or cannot decode.
 class InvalidTokenError(AuthError):
-    """JWT missing, expired, or can't be decoded."""
+    pass
 
 
+# I raise this when the token decodes but that user id no longer exists.
 class UserNotFoundError(AuthError):
-    """Token was valid but that user id doesn't exist anymore."""
+    pass
 
 
+# Base class for upload, ingest, and document access problems.
 class DocumentError(Exception):
-    """Base for anything document-related."""
+    pass
 
 
+# I raise this when a doc is missing or not owned by the caller.
+# I use one error so I do not leak whether another user owns the file.
 class DocumentNotFoundError(DocumentError):
-    """No doc, or not yours — same error so we don't leak other people's files."""
+    pass
 
 
+# I raise this when the upload extension is not pdf, txt, or docx.
 class UnsupportedFileTypeError(DocumentError):
-    """Upload extension isn't pdf/txt/docx (or whatever we allow)."""
+    pass
 
 
+# I raise this when the embedder fails or returns the wrong vector count.
 class EmbeddingError(DocumentError):
-    """Embedder blew up or returned the wrong number of vectors."""
+    pass
 
 
+# I raise this when chat runs before ingestion finishes (status != ready).
 class DocumentNotReadyError(DocumentError):
-    """User asked a question before ingestion finished (status != ready)."""
+    pass
 
 
+# I raise this when the DB row exists but the file on disk is gone.
 class DocumentFileNotFoundError(DocumentError):
-    """DB row exists but the file on disk is gone."""
+    pass
 
 
+# I raise this when an LLM call fails or the API key/client is not set up.
 class LLMError(Exception):
-    """LLM call failed or API key / client isn't set up."""
+    pass

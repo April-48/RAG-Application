@@ -1,61 +1,66 @@
 # Achieved vs future work
 
-This file lists what the app **does today** and what is still **not built**. For scaling ideas (more API servers, workers, S3, etc.), see the scalability section in [system design](../system_design.md).
+For a fuller scaling write-up, see [system design](../system_design.md#scalability-mvp--production).
 
 ---
 
-## What is implemented
+## What I built
 
-### App features
+**Core homework flow**
 
-- Sign up and log in with JWT
-- Upload PDF, TXT, and DOCX
-- Document status flow: `uploaded` → `processing` → `ready` / `failed` (frontend polls every ~5s)
-- Pick one document and chat with streaming SSE answers
-- Answers include source snippets (chunk text, page number when available)
-- Open or download the original uploaded file
-- Chat history saved per user + document
-- Rename documents in the UI (`display_name`; the file on disk stays the same)
-- Search the document list, deep link to chat with `?doc=`
-- Owner-only access — other users get `404`, not a permission error that leaks the document id
-- **Hybrid RAG retrieval** — query router with 6 modes + pgvector search; can skip the LLM for direct answers or weak evidence
+- Sign up / log in (JWT)
+- Upload PDF, TXT, DOCX
+- Wait for `uploaded` → `processing` → `ready`
+- Chat on one document with streaming answers and source snippets
+- Chat history per user + document
 
-### Front–back separation
+**Extras I added on top**
 
-| Layer | Folder | What it does |
-| ----- | ------ | ------------ |
-| Frontend | `frontend/` | React UI, routing, API calls only |
-| API layer | `middleware/` | FastAPI routes, JWT, validation, HTTP errors |
-| Backend / core | `backend/` (`app` package) | DB, RAG pipeline, storage, Redis cache, LLM/embeddings |
+- Hybrid RAG (query router + pgvector)
+- Optional Redis cache and chat rate limit
+- Rename documents, search list, open original file, `?doc=` deep link
+- Owner-only access (other users get 404)
 
-The API layer imports the backend package in the same process (`pip install -e ./backend`). That keeps setup simple, but the folder split is how I would separate services later.
+**Architecture**
 
-### Design choices that help scaling later
+| Layer | Folder | Role |
+| ----- | ------ | ---- |
+| Frontend | `frontend/` | UI only |
+| API | `middleware/` | FastAPI routes + auth |
+| Backend | `backend/` | RAG, DB, storage |
 
-- Docker Compose with separate db / redis / API / frontend services
-- JWT auth (stateless API)
-- Ingestion runs after upload (`BackgroundTasks` + `ingest_document()`)
-- `StorageBackend` interface, Redis answer cache, Redis chat rate limit, Alembic migrations, owner-scoped repositories
+All three live in one repo. The API imports the backend directly in one process — easy for local development, easy to split later.
 
 ---
 
-## What is not implemented
+## What I did not build
 
-These are product gaps, not the full scaling story (see system design for that).
+- Multi-document chat (one file at a time only)
+- Document sharing (`document_permissions` table unused)
+- OCR for scanned PDFs
+- Durable background queue — ingestion uses FastAPI BackgroundTasks today, not Celery/RQ
+- Production monitoring / audit logs
 
-| Area | MVP today | What I would add later |
-| ---- | --------- | ---------------------- |
-| Document scope | Single-document chat | Search across multiple documents |
-| Sharing | `document_permissions` table exists but is unused | Shared access UI + RBAC |
-| PDF quality | Text layer only | OCR for scanned PDFs |
-| File types | PDF, TXT, DOCX | PPTX, HTML, Markdown, etc. |
-| Cache freshness | TTL only | Clear cache on re-ingest |
-| Ops | Optional Redis rate limit; no monitoring | Better abuse prevention, logs, audit trail |
+---
+
+## If I scaled this later
+
+The MVP runs on one machine, but I split the main parts so they can scale on their own.
+
+**Ingestion workers** — The upload flow already calls `ingest_document()` as a background task. Switching to Celery/RQ means enqueuing that job to Redis instead, so ingestion survives API restarts and can run in parallel.
+
+**S3 for uploads** — Local disk works for Docker on a laptop. For multiple API instances I would plug an S3 backend into `StorageBackend` without rewriting the upload flow.
+
+**More API instances** — The API is stateless (identity is in the JWT, state is in Postgres/Redis), so adding more containers behind a load balancer is straightforward.
+
+**Stronger vector search** — pgvector in Postgres is fine for homework-scale data. At larger scale I would add indexes or move vectors to a dedicated DB.
+
+I would tackle those four areas before things like OCR or multi-document search. Details and a target diagram are in [system design](../system_design.md).
 
 ---
 
 ## Related docs
 
-- [System design](../system_design.md) — architecture, RAG flows, scalability
+- [System design](../system_design.md)
 - [Known limitations](known-limitations.md)
-- [ADRs](../adr/) — why I made each MVP trade-off
+- [ADRs](../adr/)
