@@ -17,7 +17,7 @@ app/
 └── workers/       ingest_document() for BackgroundTasks
 
 alembic/           migrations
-tests/             77 pytest tests
+tests/             80 pytest tests
 storage/uploads/   runtime files (gitignored)
 ```
 

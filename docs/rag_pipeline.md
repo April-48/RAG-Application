@@ -92,15 +92,18 @@ The system prompt:
 
 ### Sources aligned with the prompt
 
-The UI **sources panel shows the same chunks passed to the LLM**, not the raw retrieval list.
+Sources in the API and UI match the **citation list returned for that answer path**:
 
-| Stage | What you see |
-| ----- | ------------ |
-| Raw retrieval | Logged as `raw_chunks=N` |
-| After `prepare_llm_chunks()` | Logged as `prompt_chunks=M` |
-| UI sources | `display_sources=M` (same list as prompt) |
+| Path | What sources show |
+| ---- | ----------------- |
+| LLM (`llm`, `llm_retry`) | Chunks after `prepare_llm_chunks()` — same list sent to the prompt |
+| `skip_llm` / `direct_extraction` | Chunks from retrieval (positional, page, or section lookup) |
+
+The UI **sources panel** lists those chunks. A separate **Retrieved via** label under each assistant bubble shows the hybrid router mode (`semantic`, `page_lookup`, `whole_document_summary`, etc.).
 
 If nothing reaches the prompt (`prompt_chunks=0`), the answer is insufficient-context and **sources are empty** — even when retrieval returned rows earlier in the pipeline.
+
+For logging, compare `raw_chunks`, `prompt_chunks`, and `display_sources` in `app.services.chat_service` answer summaries.
 
 ### One retry on overly conservative LLM refusal
 
@@ -137,6 +140,8 @@ RETRIEVAL_MIN_SIMILARITY=0.20
 RETRIEVAL_ENFORCE_SIMILARITY_THRESHOLD=false
 
 LLM_MODEL=gpt-5-mini
+# Leave LLM_TEMPERATURE unset for gpt-5-mini (provider default only).
+# LLM_TEMPERATURE=0
 OPENAI_API_KEY=...
 
 ENABLE_REDIS_CACHE=false
@@ -147,7 +152,7 @@ CHAT_RATE_LIMIT_PER_MINUTE=10
 
 Code defaults above match `config.py`. `.env.example` sets `ENABLE_REDIS_CACHE=true` and `ENABLE_RATE_LIMIT=true` for local demos.
 
-**Model choice:** default is `gpt-5-mini`. See README [Model Choice](../README.md#model-choice) for alternatives (`gpt-5.4-mini`, `gpt-4.1-mini`, `gpt-4o-mini`).
+**Model choice:** default is `gpt-5-mini`. See README [Model Choice](../README.md#model-choice) for alternatives (`gpt-5.4-mini`, `gpt-4.1-mini`, `gpt-4o-mini`). Do not set `LLM_TEMPERATURE=0` for `gpt-5-mini` — see [troubleshooting](engineering-notes/troubleshooting.md).
 
 ## Logging
 

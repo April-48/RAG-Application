@@ -15,7 +15,7 @@ Two toggles (`true` in `.env.example`; code defaults `false` without `.env`):
 **1. Answer cache** (`ENABLE_REDIS_CACHE`) — `ChatService` / `AnswerCache`
 
 - Key: `rag:answer:{user_id}:{document_id}:{sha256(normalized_question)}`  
-- Value: `{answer, sources}`, TTL default 3600s  
+- Value: `{answer, sources, retrieval_mode?, retrieval_page?, retrieval_section?}`, TTL default 3600s  
 - Miss or error → full RAG path  
 - Insufficient-context answers are **not** cached  
 - **Clear chat history** removes all cache keys for that user + document  

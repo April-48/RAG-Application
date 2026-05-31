@@ -13,7 +13,7 @@ src/
 └── App.tsx      routing
 ```
 
-Chat supports SSE streaming, source panel, and **Clear history** (confirmation modal; clears server messages + Redis cache for that document).
+Chat supports SSE streaming, source panel, **Retrieved via** labels (hybrid router mode under each assistant answer), and **Clear history** (confirmation modal; clears server messages + Redis cache for that document).
 
 Run (API should be on :8000):
 

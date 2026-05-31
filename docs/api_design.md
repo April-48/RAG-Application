@@ -131,7 +131,10 @@ Chat is scoped to one document at a time. Every route takes a `{document_id}`. T
       "page_number": 2,
       "chunk_text": "…"
     }
-  ]
+  ],
+  "retrieval_mode": "semantic",
+  "retrieval_page": null,
+  "retrieval_section": null
 }
 ```
 
@@ -146,6 +149,8 @@ Chat is scoped to one document at a time. Every route takes a `{document_id}`. T
 
 Each source has `chunk_index`, optional `page_number`, and `chunk_text`. Sources are not parsed from the LLM reply text.
 
+**Retrieval mode** — which hybrid router path ran (`semantic`, `page_lookup`, `whole_document_summary`, etc.). Optional `retrieval_page` / `retrieval_section` give extra context for page/section lookups. The chat UI shows these as a label under each assistant answer (`Retrieved via: …`).
+
 **POST `/chat/{document_id}/ask/stream`**
 
 Same request body as `/ask`. Response type is **Server-Sent Events** (`text/event-stream`).
@@ -154,7 +159,13 @@ Each line looks like:
 
 ```json
 { "type": "token", "data": "partial answer text" }
-{ "type": "sources", "data": [ { "chunk_index": 0, "page_number": 1, "chunk_text": "…" } ] }
+{
+  "type": "sources",
+  "data": [ { "chunk_index": 0, "page_number": 1, "chunk_text": "…" } ],
+  "retrieval_mode": "whole_document_summary",
+  "retrieval_page": null,
+  "retrieval_section": null
+}
 { "type": "done" }
 ```
 
@@ -189,6 +200,9 @@ For hybrid retrieval, some questions skip the LLM (direct extraction or weak evi
     "sources": [
       { "chunk_index": 0, "page_number": 2, "chunk_text": "…" }
     ],
+    "retrieval_mode": "semantic",
+    "retrieval_page": null,
+    "retrieval_section": null,
     "created_at": "2026-01-01T00:00:01Z"
   }
 ]

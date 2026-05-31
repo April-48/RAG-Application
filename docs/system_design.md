@@ -95,7 +95,7 @@ More background: ADRs [0004](adr/0004-async-ingestion-backgroundtasks.md)–[000
 - **Document** — `owner_id`, status (`uploaded` / `processing` / `ready` / `failed`), optional `display_name`
 - **DocumentChunk** — text + embedding vector
 - **ChatSession** — one per (user, document)
-- **Message** — user/assistant text; assistant rows store `sources_json`
+- **Message** — user/assistant text; assistant rows store `sources_json` (chunk list, or wrapped dict with optional `retrieval_mode`)
 - **DocumentPermission** — table exists; not used in MVP
 
 ## Access control
@@ -143,6 +143,8 @@ Before the LLM, `query_router` picks a mode. This is simple rule-based routing p
 **Prompt:** answers must stay grounded in retrieved context, but the model may **synthesize across snippets** and give **partial answers with uncertainty**. The fixed insufficient-context line is only for when context has **no** relevant information.
 
 Sources shown in the UI match the **citation list returned by the API**: prompt-filtered chunks for LLM answers; retrieval chunks for `skip_llm` and `direct_extraction` paths. They are not parsed from free-form LLM output.
+
+Each assistant answer also shows a **Retrieved via** label with the hybrid router mode (`semantic`, `page_lookup`, `whole_document_summary`, etc.) so you can see which retrieval path ran.
 
 ## Redis
 

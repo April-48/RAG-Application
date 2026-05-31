@@ -16,7 +16,7 @@ pip install -e .
 pytest
 ```
 
-There are **77 tests** covering auth, document ownership, upload validation, hybrid retrieval, Redis cache keys, clear-history routes, and mocked chat. Tests do **not** call real LLM or embedding APIs.
+There are **80 tests** covering auth, document ownership, upload validation, hybrid retrieval, Redis cache keys, clear-history routes, mocked chat, and retrieval mode metadata. Tests do **not** call real LLM or embedding APIs.
 
 ### Frontend
 
@@ -154,6 +154,7 @@ cp .env.example .env
 | `RETRIEVAL_ENFORCE_SIMILARITY_THRESHOLD` | Pre-filter weak hits before LLM | Default **false** (MVP — LLM decides) |
 | `OPENAI_API_KEY` | LLM chat | Required unless you use a local OpenAI-compatible server |
 | `LLM_MODEL` / `LLM_BASE_URL` | LLM config | Default `gpt-5-mini`; see README Model Choice for alternatives; set base URL for OpenRouter/Ollama |
+| `LLM_TEMPERATURE` | Sampling temperature | Optional; **leave unset** for `gpt-5-mini`. Set `0` only for models that support it (e.g. `gpt-4o-mini`) |
 | `LLM_PROVIDER` | LLM backend kind | Default `openai` (OpenAI-compatible) |
 | `ENABLE_REDIS_CACHE` | Answer cache | `true` in `.env.example`; code defaults to `false` without `.env` |
 | `CACHE_TTL_SECONDS` | Redis answer TTL | Default **3600** |
@@ -315,6 +316,7 @@ Full list: [demo checklist](engineering-notes/demo-checklist.md).
 ### LLM returns 502
 
 - Set `OPENAI_API_KEY` in `.env`, or point `LLM_BASE_URL` at a running local server
+- For **`gpt-5-mini`**, leave `LLM_TEMPERATURE` unset — it does not accept `0`
 - See [troubleshooting.md](engineering-notes/troubleshooting.md)
 
 ### Document stuck in `processing`

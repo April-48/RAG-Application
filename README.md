@@ -29,6 +29,7 @@ It runs locally with Docker Compose. It is an MVP, not a production app — but 
 - Background ingestion with status tracking (`uploaded` → `processing` → `ready` / `failed`)
 - Text chunking, embeddings, and **hybrid RAG retrieval** (rule-based query router + pgvector search)
 - Grounded answers with source snippets; synthesis across retrieved chunks when helpful
+- **Retrieval mode label** under each assistant answer (shows hybrid router path, e.g. Semantic search, Summary)
 - Clear chat history (messages + Redis answer cache for that document)
 - Single-document chat with source snippets
 - Streaming chat answers over SSE (one active stream per browser session — input and document switching lock while the assistant is answering)
@@ -128,6 +129,7 @@ The model is kept configurable so you can swap it without touching the code.
 
 ```env
 LLM_MODEL=gpt-5-mini        # default — good balance of quality and cost
+# Do not set LLM_TEMPERATURE=0 for gpt-5-mini (provider default only)
 
 # Higher capability:
 # LLM_MODEL=gpt-5.4-mini    # faster, stronger reasoning, higher cost
@@ -149,7 +151,7 @@ of the LLM. So the model stays swappable rather than hard-coded.
 2. Upload a **text-based** PDF, TXT, or DOCX (scanned PDFs need OCR — not built yet).
 3. Wait until status is `ready`.
 4. Open Chat and select the document.
-5. Ask a content question the document can answer (e.g. main idea, key points, limitations). Show streaming response and sources. While the answer streams, the input is disabled and the sidebar shows “AI is answering. Please wait…”
+5. Ask a content question the document can answer (e.g. main idea, key points, limitations). Show streaming response, sources, and the **Retrieved via** label under the answer. While the answer streams, the input is disabled and the sidebar shows “AI is answering. Please wait…”
 6. With Redis running, ask the **same question twice** to show cache hit (see checklist).
 7. Optional: **Clear chat history** and confirm messages disappear.
 8. Optional: sign up as a second user and confirm that the first user's document returns **404** — not 403, not the document.
@@ -183,7 +185,7 @@ Layer notes: [frontend](frontend/README.md) · [API layer](middleware/README.md)
 
 ## Testing
 
-**Backend** — **77 pytest tests** (auth, document ownership, upload validation, hybrid retrieval/query router, Redis cache keys, clear-history routes, mocked chat):
+**Backend** — **80 pytest tests** (auth, document ownership, upload validation, hybrid retrieval/query router, Redis cache keys, clear-history routes, mocked chat, retrieval mode storage):
 
 ```bash
 cd backend

@@ -21,6 +21,7 @@ For a fuller scaling write-up, see [system design](../system_design.md#scalabili
 - Upload validation: extension whitelist, size limit (default 20 MB), basic content signatures (PDF header, DOCX ZIP, UTF-8 text), filename sanitization
 - Clear chat history (Postgres messages + Redis cache for that document)
 - Optional Redis cache and chat rate limit
+- **Retrieval mode label** in chat (`Retrieved via: Semantic search`, `Page lookup · p.3`, etc.)
 - Single active stream UX: while the assistant is answering, input and send are disabled, document switching is locked, typing indicator shown
 - Rename documents, search list, open original file, `?doc=` deep link
 - Owner-only access (other users get 404)

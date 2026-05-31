@@ -18,7 +18,7 @@ Things I check before a demo or submission video.
 - [ ] Sign up / log in
 - [ ] Upload PDF or TXT
 - [ ] Status reaches `ready`
-- [ ] Ask a question → streaming answer + sources
+- [ ] Ask a question → streaming answer + sources + **Retrieved via** label (e.g. Semantic search, Summary)
 - [ ] While answering: input and Send disabled, “AI is answering. Please wait…” shown, typing indicator visible
 - [ ] While answering: document list in sidebar is locked (cannot switch docs)
 - [ ] Try a content question (main idea, limitations, summarize)
@@ -36,7 +36,8 @@ See [troubleshooting.md](troubleshooting.md) if uploads fail unexpectedly.
 ## Nice to show (optional)
 
 - [ ] Same question twice → Redis cache faster second time
-- [ ] “First sentence of the document” → hybrid router, no LLM
+- [ ] “Summarize this document” → **Retrieved via: Summary**
+- [ ] “First sentence of the document” → hybrid router, no LLM; label shows **Document beginning**
 - [ ] Second user cannot open first user's doc id (404)
 
 If RAG answers look wrong: [rag_pipeline.md](../rag_pipeline.md) · [troubleshooting.md](troubleshooting.md)
