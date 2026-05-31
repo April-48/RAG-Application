@@ -4,6 +4,9 @@
  * Loads history on mount, sends questions via SSE streaming, and falls back
  * to the one-shot /ask endpoint if streaming breaks. Assistant messages can
  * carry source chunks for the Sources panel.
+ *
+ * Only one active request at a time per hook instance — send() no-ops while
+ * busy. Pass onBusyChange so the parent can block document switches globally.
  */
 
 import { useCallback, useEffect, useRef, useState } from "react";
@@ -11,6 +14,11 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { chatApi } from "../api/chatApi";
 import { ApiError } from "../api/client";
 import type { ChatMessage, Source } from "../types/chat";
+
+export interface UseChatOptions {
+  /** Called when a send/stream starts or finishes — use to lock the whole page. */
+  onBusyChange?: (busy: boolean) => void;
+}
 
 export interface UseChatResult {
   messages: ChatMessage[];
@@ -24,7 +32,8 @@ export interface UseChatResult {
 }
 
 /** Chat hook for one document — history, streaming send, and error state. */
-export function useChat(documentId: string): UseChatResult {
+export function useChat(documentId: string, options: UseChatOptions = {}): UseChatResult {
+  const { onBusyChange } = options;
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -32,6 +41,16 @@ export function useChat(documentId: string): UseChatResult {
   const [loadingHistory, setLoadingHistory] = useState(true);
   const [clearingHistory, setClearingHistory] = useState(false);
   const busyRef = useRef(false);
+  const abortRef = useRef<AbortController | null>(null);
+
+  const setBusyState = useCallback(
+    (next: boolean) => {
+      busyRef.current = next;
+      setBusy(next);
+      onBusyChange?.(next);
+    },
+    [onBusyChange],
+  );
 
   // Switching documents = new history fetch. cancelled flag avoids race updates.
   useEffect(() => {
@@ -69,6 +88,17 @@ export function useChat(documentId: string): UseChatResult {
     };
   }, [documentId]);
 
+  // Abort any in-flight stream when this document's chat unmounts.
+  useEffect(() => {
+    return () => {
+      if (busyRef.current) {
+        abortRef.current?.abort();
+        busyRef.current = false;
+        onBusyChange?.(false);
+      }
+    };
+  }, [onBusyChange]);
+
   /** Patch the last assistant bubble (used while tokens stream in). */
   const updateLastAssistant = useCallback(
     (patch: (msg: ChatMessage) => ChatMessage) => {
@@ -90,8 +120,11 @@ export function useChat(documentId: string): UseChatResult {
       const question = raw.trim();
       if (!question || busyRef.current) return;
 
-      busyRef.current = true;
-      setBusy(true);
+      abortRef.current?.abort();
+      const controller = new AbortController();
+      abortRef.current = controller;
+
+      setBusyState(true);
       setError(null);
       setRateLimitWarning(null);
       // Optimistic UI: show user msg + empty assistant placeholder immediately.
@@ -107,18 +140,26 @@ export function useChat(documentId: string): UseChatResult {
       ]);
 
       try {
-        await chatApi.askStream(documentId, question, {
-          onToken: (token) =>
-            updateLastAssistant((m) => ({
-              ...m,
-              content: m.content + token,
-            })),
-          onSources: (sources: Source[]) =>
-            updateLastAssistant((m) => ({ ...m, sources })),
-          onError: (message) => setError(message),
-        });
+        await chatApi.askStream(
+          documentId,
+          question,
+          {
+            onToken: (token) =>
+              updateLastAssistant((m) => ({
+                ...m,
+                content: m.content + token,
+              })),
+            onSources: (sources: Source[]) =>
+              updateLastAssistant((m) => ({ ...m, sources })),
+            onError: (message) => setError(message),
+          },
+          controller.signal,
+        );
         updateLastAssistant((m) => ({ ...m, streaming: false }));
       } catch (err) {
+        if (controller.signal.aborted) {
+          return;
+        }
         if (err instanceof ApiError && err.status === 429) {
           setRateLimitWarning(err.message);
           setMessages((prev) => {
@@ -161,11 +202,15 @@ export function useChat(documentId: string): UseChatResult {
           });
         }
       } finally {
-        busyRef.current = false;
-        setBusy(false);
+        if (abortRef.current === controller) {
+          abortRef.current = null;
+        }
+        if (!controller.signal.aborted) {
+          setBusyState(false);
+        }
       }
     },
-    [documentId, updateLastAssistant],
+    [documentId, setBusyState, updateLastAssistant],
   );
 
   /** Delete all saved messages for this document and reset local state. */

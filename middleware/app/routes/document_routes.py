@@ -25,10 +25,14 @@ from app.db.database import get_db
 from app.core.exceptions import (
     DocumentFileNotFoundError,
     DocumentNotFoundError,
+    InvalidUploadContentError,
+    InvalidUploadFilenameError,
     UnsupportedFileTypeError,
+    UploadTooLargeError,
 )
 from app.models.user import User
-from app.services.document_service import ALLOWED_EXTENSIONS, DocumentService
+from app.services.document_service import DocumentService
+from app.services.upload_validation import ALLOWED_EXTENSIONS
 from app.workers.ingestion_worker import ingest_document
 
 from ..dependencies.get_current_user import get_current_user
@@ -44,7 +48,8 @@ router = APIRouter(prefix="/documents", tags=["documents"])
 # DocumentService saves bytes to disk and creates a row with status "uploaded".
 # I schedule ingest_document() in BackgroundTasks so this handler returns fast.
 # Return DocumentResponse with HTTP 201.
-# Return HTTP 400 for missing filename or unsupported extension (.pdf, .txt, .docx).
+# Return HTTP 400 for missing filename, bad extension, or content mismatch.
+# Return HTTP 413 when the file exceeds MAX_UPLOAD_SIZE_MB.
 def upload_document(
     background_tasks: BackgroundTasks,
     file: UploadFile = File(...),
@@ -64,6 +69,21 @@ def upload_document(
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail=f"Unsupported file type. Allowed: {allowed}",
+        ) from exc
+    except InvalidUploadFilenameError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc) or "Invalid filename",
+        ) from exc
+    except InvalidUploadContentError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(exc),
+        ) from exc
+    except UploadTooLargeError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=str(exc),
         ) from exc
 
     background_tasks.add_task(ingest_document, document.id, current_user.id)

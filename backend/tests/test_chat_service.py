@@ -11,6 +11,7 @@ from app.cache.answer_cache import AnswerCache
 from app.core.exceptions import DocumentNotReadyError, LLMError
 from app.models.chunk import DocumentChunk
 from app.models.document import Document
+from app.rag.pipeline import GenerationOutput
 from app.rag.query_router import QueryMode, RoutedQuery
 from app.rag.retrieval_service import RetrievalResult
 from app.services.chat_service import ChatService, ClearHistoryResult
@@ -96,7 +97,14 @@ def test_ask_returns_mocked_answer_and_sources(db_session) -> None:
         chunks=[chunk],
         routed=RoutedQuery(mode=QueryMode.SEMANTIC),
     )
-    pipeline.generate.return_value = "The warranty lasts two years."
+    pipeline.generate.return_value = GenerationOutput(
+        answer="The warranty lasts two years.",
+        prompt_chunks=[chunk],
+        answer_path="llm",
+        raw_retrieved_count=1,
+        prompt_chunk_count=1,
+        context_chars=120,
+    )
 
     cache = AnswerCache(client=None)
     service = ChatService(

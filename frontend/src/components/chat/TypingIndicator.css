@@ -1,0 +1,59 @@
+.typing-indicator {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.625rem;
+  max-width: 85%;
+  padding: 0.75rem 1rem;
+  border-radius: 1rem;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  background: rgba(255, 255, 255, 0.6);
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.typing-indicator__label {
+  font-size: 0.75rem;
+  line-height: 1.25rem;
+  color: rgb(100 116 139);
+}
+
+.typing-indicator__dots {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+
+.typing-indicator__dot {
+  width: 0.375rem;
+  height: 0.375rem;
+  border-radius: 9999px;
+  background: rgb(129 140 248);
+  animation: typing-indicator-bounce 1.4s infinite ease-in-out both;
+}
+
+.typing-indicator__dot:nth-child(1) {
+  animation-delay: -0.32s;
+}
+
+.typing-indicator__dot:nth-child(2) {
+  animation-delay: -0.16s;
+}
+
+.typing-indicator__dot:nth-child(3) {
+  animation-delay: 0s;
+}
+
+@keyframes typing-indicator-bounce {
+  0%,
+  80%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+
+  40% {
+    transform: translateY(-0.25rem);
+    opacity: 1;
+  }
+}

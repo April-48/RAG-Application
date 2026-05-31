@@ -69,12 +69,14 @@ function DocumentSidebar({
   selectedId,
   onSelect,
   onClose,
+  chatBusy = false,
 }: {
   documents: Document[];
   loading: boolean;
   selectedId: string;
   onSelect: (id: string) => void;
   onClose: () => void;
+  chatBusy?: boolean;
 }) {
   const [search, setSearch] = useState("");
   const ready = useMemo(
@@ -114,6 +116,14 @@ function DocumentSidebar({
           className="text-xs"
         />
       </div>
+      {chatBusy && (
+        <p
+          role="status"
+          className="shrink-0 border-b border-indigo-100 bg-indigo-50/90 px-3 py-2 text-xs leading-relaxed text-indigo-800"
+        >
+          AI is answering. Wait before switching documents.
+        </p>
+      )}
       <div className="min-h-0 flex-1 overflow-y-auto p-2">
         {loading ? (
           <p className="px-2 py-4 text-xs text-slate-400">Loading…</p>
@@ -139,13 +149,18 @@ function DocumentSidebar({
                   <button
                     type="button"
                     aria-current={selected ? "true" : undefined}
+                    disabled={chatBusy}
                     onClick={() => onSelect(doc.id)}
                     className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-sm transition ${
                       selected
                         ? "bg-white/60 font-medium text-indigo-700 shadow-sm backdrop-blur-sm"
                         : "text-slate-700 hover:bg-white/40"
-                    }`}
-                    title={label}
+                    } disabled:cursor-not-allowed disabled:opacity-50`}
+                    title={
+                      chatBusy
+                        ? "Wait for the current answer to finish"
+                        : label
+                    }
                   >
                     <SelectionIndicator selected={selected} />
                     <span className="min-w-0 truncate">{label}</span>
@@ -169,6 +184,7 @@ function ChatSession({
   showSources,
   onOpenSources,
   onCloseSources,
+  onBusyChange,
 }: {
   documentId: string;
   selectedDoc: Document;
@@ -177,9 +193,10 @@ function ChatSession({
   showSources: boolean;
   onOpenSources: () => void;
   onCloseSources: () => void;
+  onBusyChange: (busy: boolean) => void;
 }) {
   const { messages, busy, error, rateLimitWarning, loadingHistory, clearingHistory, send, clearHistory } =
-    useChat(documentId);
+    useChat(documentId, { onBusyChange });
   const [pinnedSources, setPinnedSources] = useState<Source[] | null>(null);
   const [showClearConfirm, setShowClearConfirm] = useState(false);
   const [openingFile, setOpeningFile] = useState(false);
@@ -335,6 +352,7 @@ export default function ChatPage() {
   const [selectedId, setSelectedId] = useState("");
   const [showDocuments, setShowDocuments] = useState(true);
   const [showSources, setShowSources] = useState(true);
+  const [chatBusy, setChatBusy] = useState(false);
 
   const readyDocuments = useMemo(
     () => documents.filter((d) => d.status === "ready"),
@@ -363,8 +381,9 @@ export default function ChatPage() {
     }
   }, [docParam, loading, readyDocuments, readyIds, setSearchParams]);
 
-  /** Update selection and sync the ?doc= URL param. */
+  /** Update selection and sync the ?doc= URL param. Block while AI is answering. */
   const handleSelectDocument = (id: string) => {
+    if (chatBusy) return;
     setSelectedId(id);
     setSearchParams({ doc: id }, { replace: true });
   };
@@ -395,6 +414,7 @@ export default function ChatPage() {
             selectedId={selectedId}
             onSelect={handleSelectDocument}
             onClose={() => setShowDocuments(false)}
+            chatBusy={chatBusy}
           />
         )}
 
@@ -408,6 +428,7 @@ export default function ChatPage() {
             showSources={showSources}
             onOpenSources={() => setShowSources(true)}
             onCloseSources={() => setShowSources(false)}
+            onBusyChange={setChatBusy}
           />
         ) : (
           <CenterEmptyState

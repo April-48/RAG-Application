@@ -1,4 +1,9 @@
-"""Get shared Redis clients for cache and rate limiting (fail-open when disabled)."""
+"""Get shared Redis clients for cache and rate limiting.
+
+Both features are optional and fail-open — if Redis is down or disabled in .env,
+the app keeps working without caching or rate limits. I use @lru_cache so every
+AnswerCache and ChatRateLimiter instance shares one connection pool per purpose.
+"""
 
 from __future__ import annotations
 

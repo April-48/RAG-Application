@@ -1,7 +1,10 @@
 """Embedder interface — local sentence-transformers or OpenAI.
 
-Pipeline only talks to Embedder, not a specific vendor. EMBEDDING_DIM must match
-the pgvector column (384 for local MiniLM by default).
+The RAG pipeline only talks to the Embedder protocol, not a specific vendor.
+That makes it easy to swap providers via EMBEDDING_PROVIDER in .env.
+
+EMBEDDING_DIM must match the pgvector column width (384 for local MiniLM by
+default). A mismatch raises EmbeddingError at model load time.
 """
 
 from __future__ import annotations

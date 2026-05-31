@@ -1,7 +1,13 @@
 """Classify user questions and extract answers from positional text.
 
-Deterministic rules only — no extra LLM call. Modes drive retrieval in
-``RetrievalService`` before generation runs.
+Before I search pgvector, I look at the question wording. Some questions are
+better handled with simple rules than with embeddings:
+  - "Summarize the document" → pick chunks spread across the whole file
+  - "What is on page 5?" → fetch chunks tagged with page_number=5
+  - "First sentence of the document" → read chunk 0 directly, skip the LLM
+
+This module uses phrase matching and regex only — no extra LLM call.
+RetrievalService reads the RoutedQuery output and picks the right fetch strategy.
 """
 
 from __future__ import annotations
@@ -11,8 +17,16 @@ from dataclasses import dataclass
 from enum import Enum
 
 
-# Retrieval strategy I pick for a user question before fetching chunks.
 class QueryMode(str, Enum):
+    """Which retrieval strategy fits this question.
+
+    SEMANTIC — default: embed the question and search pgvector.
+    DOCUMENT_BEGINNING / DOCUMENT_ENDING — fetch first or last chunk.
+    PAGE_LOOKUP — fetch chunks by page number (PDF only).
+    SECTION_LOOKUP — find a heading that matches a section name.
+    WHOLE_DOCUMENT_SUMMARY — sample chunks from start, middle, and end.
+    """
+
     SEMANTIC = "semantic"
     DOCUMENT_BEGINNING = "document_beginning"
     DOCUMENT_ENDING = "document_ending"
@@ -21,8 +35,13 @@ class QueryMode(str, Enum):
     WHOLE_DOCUMENT_SUMMARY = "whole_document_summary"
 
 
-# How I extract a direct answer from chunk text without calling the LLM.
 class PositionalStyle(str, Enum):
+    """How to cut an answer out of chunk text without calling the LLM.
+
+    Used for questions like "first sentence" or "last paragraph".
+    EXCERPT returns a short trimmed preview (about 300 chars).
+    """
+
     FIRST_SENTENCE = "first_sentence"
     FIRST_PARAGRAPH = "first_paragraph"
     LAST_SENTENCE = "last_sentence"
@@ -30,6 +49,8 @@ class PositionalStyle(str, Enum):
     EXCERPT = "excerpt"
 
 
+# Fixed replies when retrieval finds nothing useful — ChatService sends these
+# straight to the user without calling the LLM.
 WEAK_EVIDENCE_MESSAGE = (
     "I could not find enough evidence in the uploaded document to answer this question."
 )
@@ -40,9 +61,13 @@ PAGE_NOT_FOUND_MESSAGE = (
     "I could not find content for that page in the uploaded document."
 )
 
+# Section names that actually mean "the whole document", not a real heading.
 _DOCUMENT_SCOPE_NAMES = frozenset(
     {"document", "doc", "this document", "the document", "whole document", "entire document"}
 )
+
+# Phrase lists below drive route_question(). I check if any phrase appears
+# anywhere in the lowercased question (substring match, not exact match).
 
 _SUMMARY_PHRASES = (
     "summarize the document",
@@ -100,8 +125,11 @@ _ENDING_DOC_PHRASES = (
     "document conclude",
 )
 
+# Matches "page 5", "Page 12", etc. Group 1 is the page number string.
 _PAGE_NUMBER_RE = re.compile(r"\bpage\s+(\d+)\b", re.IGNORECASE)
 
+# Regex patterns to pull a section title out of the question text.
+# Each pattern has one capture group for the section name.
 _SECTION_NAME_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(
         r"first sentence of (?:the )?['\"]?(.+?)['\"]?(?:\s+section)?\??$",
@@ -122,18 +150,31 @@ _SECTION_NAME_PATTERNS: tuple[re.Pattern[str], ...] = (
 )
 
 
-# Output of question classification — drives retrieval and direct answers.
 @dataclass(frozen=True)
 class RoutedQuery:
+    """Output of question classification — tells RetrievalService what to do.
+
+    mode is always set. The other fields are hints for specific modes:
+      page_number for PAGE_LOOKUP
+      section_name for SECTION_LOOKUP
+      positional_style for beginning/ending/section first-sentence questions
+    """
+
     mode: QueryMode
     positional_style: PositionalStyle | None = None
     page_number: int | None = None
     section_name: str | None = None
 
 
-# Classify a question into a retrieval mode using deterministic phrase rules.
-# Output: RoutedQuery with mode and optional page, section, or style hints.
 def route_question(question: str) -> RoutedQuery:
+    """Pick a retrieval mode from the question wording.
+
+    I check patterns in priority order: summary → page → section → beginning
+    → ending → semantic (fallback). First match wins.
+
+    Returns a RoutedQuery. RetrievalService uses it to decide whether to search
+    pgvector, read chunk 0, look up a page, etc.
+    """
     q = question.strip()
     q_lower = q.lower()
 
@@ -193,8 +234,13 @@ def route_question(question: str) -> RoutedQuery:
     return RoutedQuery(mode=QueryMode.SEMANTIC)
 
 
-# Pull a section title from the question, or None when it is not section-scoped.
 def _extract_section_name(question: str) -> str | None:
+    """Try to pull a section title from the question, or return None.
+
+    I only run when the question mentions "section" or "first sentence of".
+    If the captured name is really "the document", I ignore it — that is not
+    a section heading.
+    """
     q_lower = question.lower()
     if "section" not in q_lower and "first sentence of" not in q_lower:
         return None
@@ -209,23 +255,31 @@ def _extract_section_name(question: str) -> str | None:
     return None
 
 
-# Trim quotes and trailing punctuation from an extracted section title.
 def _clean_section_name(raw: str) -> str:
+    """Trim quotes and trailing punctuation from a regex capture group."""
     cleaned = raw.strip().strip("\"'")
     cleaned = re.sub(r"[?.!,;:]+$", "", cleaned).strip()
     return cleaned
 
 
-# Normalize a section title for fuzzy heading comparison.
 def normalize_section_name(name: str) -> str:
+    """Normalize a section title so fuzzy heading matching works.
+
+    Lowercase, collapse whitespace, strip markdown # prefixes and trailing : .
+    "  Introduction:  " and "introduction" should compare equal.
+    """
     normalized = re.sub(r"\s+", " ", name.strip().lower().strip("\"'"))
     normalized = re.sub(r"^#+\s*", "", normalized)
     normalized = normalized.rstrip(":.")
     return normalized
 
 
-# Return the first sentence from a chunk of text.
 def extract_first_sentence(text: str) -> str:
+    """Return the first sentence from a chunk of text.
+
+    I look for text ending in . ! or ?. If there is no sentence boundary,
+    I fall back to the first line, then the whole stripped text.
+    """
     stripped = text.strip()
     if not stripped:
         return ""
@@ -236,8 +290,8 @@ def extract_first_sentence(text: str) -> str:
     return first_line or stripped
 
 
-# Return the first paragraph (block separated by blank lines).
 def extract_first_paragraph(text: str) -> str:
+    """Return the first paragraph — blocks separated by blank lines."""
     stripped = text.strip()
     if not stripped:
         return ""
@@ -248,8 +302,12 @@ def extract_first_paragraph(text: str) -> str:
     return stripped.split("\n", 1)[0].strip() or stripped
 
 
-# Return the last sentence from a chunk of text.
 def extract_last_sentence(text: str) -> str:
+    """Return the last sentence from a chunk of text.
+
+    Same idea as extract_first_sentence but from the end. Falls back to the
+    last non-empty line when there are no . ! ? boundaries.
+    """
     stripped = text.strip()
     if not stripped:
         return ""
@@ -260,38 +318,48 @@ def extract_last_sentence(text: str) -> str:
     return lines[-1] if lines else stripped
 
 
-# Return the last paragraph (block separated by blank lines).
 def extract_last_paragraph(text: str) -> str:
+    """Return the last paragraph — blocks separated by blank lines."""
     stripped = text.strip()
     if not stripped:
         return ""
     paragraphs = [p.strip() for p in re.split(r"\n\s*\n", stripped) if p.strip()]
     if paragraphs:
         return paragraphs[-1]
-    lines = [line.strip() for line in stripped.splitlines() if line.strip()]
+    lines = [line.strip() for line in stripped.strip().splitlines() if line.strip()]
     return lines[-1] if lines else stripped
 
 
-# Return a short excerpt from the start of a chunk (default max 300 chars).
 def extract_beginning_excerpt(text: str, *, max_len: int = 300) -> str:
+    """Return a short preview from the start of the text (default 300 chars).
+
+    I use the first paragraph, then truncate with "..." if it is too long.
+    """
     excerpt = extract_first_paragraph(text)
     if len(excerpt) <= max_len:
         return excerpt
     return excerpt[:max_len].rstrip() + "..."
 
 
-# Return a short excerpt from the end of a chunk (default max 300 chars).
 def extract_ending_excerpt(text: str, *, max_len: int = 300) -> str:
+    """Return a short preview from the end of the text (default 300 chars).
+
+    I use the last paragraph, then truncate with "..." at the front if needed.
+    """
     excerpt = extract_last_paragraph(text)
     if len(excerpt) <= max_len:
         return excerpt
     return "..." + excerpt[-max_len:].lstrip()
 
 
-# Build a direct answer from one chunk without calling the LLM.
 def answer_from_positional_chunk(
     style: PositionalStyle, chunk_text: str
 ) -> str:
+    """Build a direct answer from one chunk without calling the LLM.
+
+    Picks the right extract_* helper based on PositionalStyle.
+    Used when RetrievalService sets direct_answer on RetrievalResult.
+    """
     if style is PositionalStyle.FIRST_SENTENCE:
         return extract_first_sentence(chunk_text)
     if style is PositionalStyle.FIRST_PARAGRAPH:
@@ -305,8 +373,12 @@ def answer_from_positional_chunk(
     return chunk_text.strip()
 
 
-# Heuristic: short, title-like lines count as section headings.
 def looks_like_heading(line: str) -> bool:
+    """Guess whether a line is a section heading rather than body text.
+
+    Heuristics: markdown # prefix, ends with :, ALL CAPS short line, or
+    just a short line under 100 chars. Long paragraphs return False.
+    """
     stripped = line.strip()
     if not stripped or len(stripped) > 150:
         return False
@@ -319,8 +391,12 @@ def looks_like_heading(line: str) -> bool:
     return len(stripped) < 100
 
 
-# Find a heading line in chunk text that matches the requested section name.
 def find_matching_heading_line(text: str, section_name: str) -> str | None:
+    """Find a heading line inside chunk text that matches the requested section.
+
+    I compare normalized names. Exact match wins. Otherwise I accept a substring
+    match when the line also looks_like_heading().
+    """
     target = normalize_section_name(section_name)
     if not target:
         return None
@@ -337,10 +413,14 @@ def find_matching_heading_line(text: str, section_name: str) -> str | None:
     return None
 
 
-# Return the first sentence that appears after a section heading in chunk text.
 def extract_first_sentence_after_heading(
     chunk_text: str, heading_line: str
 ) -> str:
+    """Return the first sentence that comes after a section heading in the chunk.
+
+    I find the heading position, skip past it and any : . - whitespace,
+    then run extract_first_sentence on what remains.
+    """
     lower_text = chunk_text.lower()
     lower_heading = heading_line.lower()
     idx = lower_text.find(lower_heading)
@@ -351,11 +431,17 @@ def extract_first_sentence_after_heading(
     return extract_first_sentence(after)
 
 
-# Locate the chunk index and nearby chunks for a named section.
-# Output: (start_index, chunk slice) or None when no heading matches.
 def find_section_chunk_indices(
     chunks: list, section_name: str
 ) -> tuple[int, list] | None:
+    """Find which chunk contains a section heading and return nearby chunks too.
+
+    I scan chunks in order. When a heading matches section_name, I return
+    (start_index, chunks[start_index : start_index + 3]). Up to 3 chunks gives
+    the LLM a bit of context after the heading.
+
+    Returns None when no chunk contains a matching heading.
+    """
     for index, chunk in enumerate(chunks):
         if find_matching_heading_line(chunk.chunk_text, section_name):
             end = min(index + 3, len(chunks))
@@ -363,8 +449,13 @@ def find_section_chunk_indices(
     return None
 
 
-# Pick first, last, and evenly spaced chunks for document-level summaries.
 def select_representative_chunks(chunks: list, *, max_chunks: int = 6) -> list:
+    """Pick chunks spread across the document for summary-style questions.
+
+    I always include the first and last chunk. The remaining slots are filled
+    with evenly spaced chunks from the middle. If the document has fewer chunks
+    than max_chunks, I return all of them.
+    """
     if not chunks:
         return []
     if len(chunks) <= max_chunks:

@@ -1,6 +1,10 @@
-"""Document DB queries — always filtered by owner_id when it matters.
+"""Database access for the documents table.
 
-Repository layer = raw SQLAlchemy, no business rules. Services call us.
+Repository layer = raw SQLAlchemy queries, no business rules. DocumentService
+calls these methods and adds validation, storage, and ingestion logic on top.
+
+Important pattern: get_owned() always filters by owner_id so users cannot
+read each other's files by guessing UUIDs.
 """
 
 from __future__ import annotations
@@ -14,15 +18,13 @@ from app.models.document import Document
 from app.models.document_permission import DocumentPermission
 
 
-# CRUD and owner-scoped lookups for the documents table.
 class DocumentRepository:
+    """CRUD and owner-scoped lookups for uploaded file metadata rows."""
 
-    # Store the DB session this repo uses for every query.
     def __init__(self, db: Session) -> None:
+        """Store the DB session used for every query in this repository."""
         self.db = db
 
-    # Insert a new document row right after upload.
-    # Status is usually 'uploaded' until background ingestion runs.
     def create(
         self,
         *,
@@ -34,6 +36,11 @@ class DocumentRepository:
         visibility: str = "private",
         status: str = "uploaded",
     ) -> Document:
+        """Insert a new document row right after a successful upload.
+
+        status usually starts as 'uploaded'. Background ingestion moves it through
+        processing → ready (or failed). storage_path is relative to the upload root.
+        """
         document = Document(
             id=document_id,
             owner_id=owner_id,
@@ -48,8 +55,8 @@ class DocumentRepository:
         self.db.refresh(document)
         return document
 
-    # List all documents owned by this user, newest first — dashboard view.
     def list_by_owner(self, owner_id: uuid.UUID) -> list[Document]:
+        """List every document owned by this user, newest first — dashboard view."""
         return list(
             self.db.scalars(
                 select(Document)
@@ -58,23 +65,34 @@ class DocumentRepository:
             )
         )
 
-    # Fetch a document only if it belongs to owner_id — main access gate.
-    # Output: Document row or None when id exists but owner differs.
     def get_owned(
         self, document_id: uuid.UUID, owner_id: uuid.UUID
     ) -> Document | None:
+        """Fetch a document only when it belongs to owner_id.
+
+        Returns None when the id exists but belongs to someone else — callers
+        treat that the same as "not found" to avoid leaking ownership info.
+        """
         return self.db.scalar(
             select(Document).where(
                 Document.id == document_id, Document.owner_id == owner_id
             )
         )
 
-    # Lookup by id only — caller must verify ownership before exposing to API.
     def get_by_id(self, document_id: uuid.UUID) -> Document | None:
+        """Lookup by id without an ownership check.
+
+        Only use this when the caller will verify access separately (e.g.
+        checking document_permissions for future sharing).
+        """
         return self.db.get(Document, document_id)
 
-    # True if user has a row in document_permissions (future sharing — MVP unused).
     def has_permission(self, document_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """Return True if user_id has a row in document_permissions.
+
+        Not used in the MVP — every document is private to its owner. The schema
+        exists so sharing can be added later without a painful migration.
+        """
         return (
             self.db.scalar(
                 select(DocumentPermission.id).where(
@@ -85,23 +103,34 @@ class DocumentRepository:
             is not None
         )
 
-    # Set lifecycle status (uploaded / processing / ready / failed) and save.
     def update_status(self, document: Document, status: str) -> Document:
+        """Update lifecycle status and commit.
+
+        Valid values: uploaded, processing, ready, failed. Chat only works when
+        status is ready.
+        """
         document.status = status
         self.db.commit()
         self.db.refresh(document)
         return document
 
-    # Save the user-editable display name — does not rename the file on disk.
     def update_display_name(
         self, document: Document, display_name: str
     ) -> Document:
+        """Save the user-editable label shown in the UI.
+
+        Does not rename the file on disk — filename stays the original upload name.
+        """
         document.display_name = display_name
         self.db.commit()
         self.db.refresh(document)
         return document
 
-    # Remove the document row — chunks and messages cascade per FK rules.
     def delete(self, document: Document) -> None:
+        """Remove the document row from Postgres.
+
+        Related chunks and messages cascade via foreign key rules. Caller must
+        also delete files from storage (DocumentService does both).
+        """
         self.db.delete(document)
         self.db.commit()

@@ -55,6 +55,80 @@ def test_prompt_builder_includes_context_and_question() -> None:
     assert "Synthesize" in user_content or "synthesize" in messages[0]["content"].lower()
 
 
+def test_is_obvious_boilerplate_chunk_detects_proceedings_noise() -> None:
+    from app.rag.prompt_builder import is_obvious_boilerplate_chunk
+
+    text = (
+        "Proceedings of the Example Conference\n"
+        "© 2024 All rights reserved\n"
+        "Permission to make digital copies\n"
+    )
+    assert is_obvious_boilerplate_chunk(text) is True
+    assert (
+        is_obvious_boilerplate_chunk(
+            "This paper studies retrieval-augmented generation quality."
+        )
+        is False
+    )
+
+
+def test_prepare_llm_chunks_drops_boilerplate_but_keeps_body() -> None:
+    import uuid
+
+    from app.rag.generation import prepare_llm_chunks
+    from app.rag.query_router import QueryMode, RoutedQuery
+    from app.rag.retrieval_service import RetrievalResult
+
+    doc_id = uuid.uuid4()
+    chunks = [
+        DocumentChunk(
+            id=uuid.uuid4(),
+            document_id=doc_id,
+            chunk_index=0,
+            page_number=1,
+            chunk_text=(
+                "Proceedings of the Example Conference\n"
+                "© 2024 All rights reserved\n"
+                "Permission to make digital copies for personal use\n"
+            ),
+            embedding=None,
+        ),
+        DocumentChunk(
+            id=uuid.uuid4(),
+            document_id=doc_id,
+            chunk_index=1,
+            page_number=2,
+            chunk_text="The main limitation is that evaluation uses only small documents.",
+            embedding=None,
+        ),
+    ]
+    prep = prepare_llm_chunks(
+        RetrievalResult(chunks=chunks, routed=RoutedQuery(mode=QueryMode.SEMANTIC))
+    )
+    assert prep is not None
+    assert len(prep.prompt_chunks) == 1
+    assert prep.prompt_chunks[0].chunk_index == 1
+    assert prep.removed_by_boilerplate == 1
+
+
+def test_build_retry_messages_adds_stronger_instruction() -> None:
+    import uuid
+
+    from app.rag.prompt_builder import RETRY_INSTRUCTION, build_retry_messages
+
+    chunk = DocumentChunk(
+        id=uuid.uuid4(),
+        document_id=uuid.uuid4(),
+        chunk_index=0,
+        page_number=1,
+        chunk_text="The model was evaluated on three benchmark datasets.",
+        embedding=None,
+    )
+    messages = build_retry_messages("What datasets were used?", [chunk])
+    assert RETRY_INSTRUCTION in messages[1]["content"]
+    assert "datasets" in messages[1]["content"]
+
+
 def test_filter_usable_chunks_drops_empty_and_short() -> None:
     import uuid
 

@@ -155,7 +155,7 @@ Both are optional and fail-open.
 ## File storage
 
 ```
-backend/storage/uploads/{user_id}/{document_id}/<file>
+backend/storage/uploads/{user_id}/{document_id}/{document_id}.<ext>
 ```
 
 Uses `StorageBackend` so S3 can replace local disk later.

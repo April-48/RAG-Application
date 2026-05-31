@@ -1,4 +1,15 @@
-"""Retrieve relevant chunks — hybrid router picks strategy, always one document."""
+"""Retrieve relevant chunks for a user question — always scoped to one document.
+
+This is the "R" in RAG. Flow:
+  1. route_question() classifies the question (semantic, page lookup, summary, …)
+  2. I fetch chunks using metadata rules or pgvector similarity search
+  3. I return a RetrievalResult that tells generation what to do next
+
+Three possible outcomes after retrieval:
+  - chunks only → pass them to the LLM
+  - direct_answer set → skip the LLM, return extracted text (e.g. first sentence)
+  - skip_llm_message set → return a fixed error string (page not found, weak hits)
+"""
 
 from __future__ import annotations
 
@@ -32,30 +43,43 @@ from app.repositories.chunk_repository import ChunkRepository
 
 logger = logging.getLogger("app.rag.retrieval_service")
 
+# How many chunks to send to the LLM for "summarize the document" questions.
 SUMMARY_MAX_CHUNKS = 6
 
 
-# Chunks plus optional direct answer or a no-LLM fallback message.
 @dataclass(frozen=True)
 class RetrievalResult:
+    """Everything retrieval hands off to generation or ChatService.
+
+    chunks — the text snippets to cite (and maybe send to the LLM).
+    routed — which QueryMode was used, for logging and prompt context.
+    direct_answer — when set, ChatService returns this text without calling the LLM.
+    skip_llm_message — when set, ChatService returns this fixed message instead.
+    Only one of direct_answer and skip_llm_message should be set at a time.
+    """
+
     chunks: list[DocumentChunk]
     routed: RoutedQuery
     direct_answer: str | None = None
     skip_llm_message: str | None = None
 
 
-# I route the question, then fetch chunks via metadata rules or pgvector search.
 class RetrievalService:
+    """Fetch chunks for one document based on how the question was classified."""
 
-    # Wire chunk repo and embedder for retrieval.
     def __init__(self, db: Session, embedder: Embedder | None = None) -> None:
+        """Wire up chunk repository and embedder for this DB session."""
         self.chunks = ChunkRepository(db)
         self.embedder = embedder or get_embedding_service()
 
-    # Classify the question and return chunks with routing metadata.
     def retrieve(
         self, document_id: uuid.UUID, question: str, top_k: int | None = None
     ) -> RetrievalResult:
+        """Main entry point — classify the question and fetch matching chunks.
+
+        I call route_question() first, then dispatch to the right _retrieve_* helper.
+        Every path ends in _finalize_result() which drops empty chunks and logs.
+        """
         routed = route_question(question)
         logger.info(
             "Retrieval start document_id=%s route=%s question=%r",
@@ -79,10 +103,14 @@ class RetrievalService:
 
         return self._finalize_result(document_id, question, result)
 
-    # Fetch the first chunk and build a direct positional answer when possible.
     def _retrieve_document_beginning(
         self, document_id: uuid.UUID, routed: RoutedQuery
     ) -> RetrievalResult:
+        """Handle "beginning of the document" style questions.
+
+        I fetch chunk_index=0 and cut out the answer with answer_from_positional_chunk.
+        No LLM needed — the answer is literally in the first chunk.
+        """
         first = self.chunks.get_first_chunk(document_id)
         if first is None:
             return RetrievalResult(chunks=[], routed=routed)
@@ -93,10 +121,14 @@ class RetrievalService:
             direct_answer=answer_from_positional_chunk(style, first.chunk_text),
         )
 
-    # Fetch the last chunk and build a direct positional answer when possible.
     def _retrieve_document_ending(
         self, document_id: uuid.UUID, routed: RoutedQuery
     ) -> RetrievalResult:
+        """Handle "end of the document" style questions.
+
+        Same idea as _retrieve_document_beginning but I use the last chunk.
+        EXCERPT style uses extract_ending_excerpt for a tail preview.
+        """
         last = self.chunks.get_last_chunk(document_id)
         if last is None:
             return RetrievalResult(chunks=[], routed=routed)
@@ -111,7 +143,6 @@ class RetrievalService:
             direct_answer=answer,
         )
 
-    # Fetch chunks for a specific page number, or fall back to semantic search.
     def _retrieve_page_lookup(
         self,
         document_id: uuid.UUID,
@@ -119,6 +150,15 @@ class RetrievalService:
         routed: RoutedQuery,
         top_k: int | None,
     ) -> RetrievalResult:
+        """Handle "what is on page N?" questions.
+
+        If the document has no page metadata (TXT/DOCX), I fall back to semantic
+        search because page numbers do not exist. If the page number is missing
+        from the question, I also fall back to semantic.
+
+        When the page exists but has no chunks, I set skip_llm_message instead
+        of calling the LLM with nothing useful.
+        """
         page_number = routed.page_number
         if page_number is None:
             return self._retrieve_semantic(document_id, question, routed, top_k)
@@ -140,10 +180,18 @@ class RetrievalService:
             )
         return RetrievalResult(chunks=page_chunks, routed=routed)
 
-    # Fetch chunks for a named section and maybe return a direct first sentence.
     def _retrieve_section_lookup(
         self, document_id: uuid.UUID, routed: RoutedQuery
     ) -> RetrievalResult:
+        """Handle "tell me about the Introduction section" style questions.
+
+        I load all chunks, find one whose text contains a matching heading,
+        and return that chunk plus up to two followers for context.
+
+        For "first sentence of X section" I try to extract the sentence right
+        after the heading and set direct_answer. Other section questions go to
+        the LLM with the matched chunks.
+        """
         section_name = routed.section_name
         if not section_name:
             return RetrievalResult(chunks=[], routed=routed)
@@ -179,19 +227,20 @@ class RetrievalService:
 
         return RetrievalResult(chunks=section_chunks, routed=routed)
 
-    # Pick representative chunks across the document for summary-style questions.
     def _retrieve_summary(
         self, document_id: uuid.UUID, routed: RoutedQuery
     ) -> RetrievalResult:
+        """Handle "summarize the document" style questions.
+
+        I pick chunks from the start, middle, and end so the LLM sees the whole
+        document spread, not just the most similar paragraph.
+        """
         all_chunks = self.chunks.list_by_document(document_id)
         representative = select_representative_chunks(
             all_chunks, max_chunks=SUMMARY_MAX_CHUNKS
         )
         return RetrievalResult(chunks=representative, routed=routed)
 
-    # Embed the question and run pgvector similarity search within one document.
-    # I log top-k scores before any threshold decision.
-    # With enforcement off (MVP default), any pgvector hit goes to the LLM.
     def _retrieve_semantic(
         self,
         document_id: uuid.UUID,
@@ -199,6 +248,15 @@ class RetrievalService:
         routed: RoutedQuery,
         top_k: int | None,
     ) -> RetrievalResult:
+        """Default path — embed the question and search pgvector within one document.
+
+        I log every hit with distance and similarity before any threshold check.
+        By default (MVP) retrieval_enforce_similarity_threshold is off, so any
+        pgvector hit goes to the LLM even if similarity is low.
+
+        When enforcement is on and the best hit is below retrieval_min_similarity,
+        I return skip_llm_message instead of wasting an LLM call on weak evidence.
+        """
         settings = get_settings()
         top_k = top_k or settings.retrieval_top_k
         query_embedding = self.embedder.embed_query(question)
@@ -263,13 +321,18 @@ class RetrievalService:
             routed=routed,
         )
 
-    # Drop empty/unusable chunks and log the final retrieval payload.
     def _finalize_result(
         self,
         document_id: uuid.UUID,
         question: str,
         result: RetrievalResult,
     ) -> RetrievalResult:
+        """Last step — filter junk chunks and write retrieval logs.
+
+        When direct_answer or skip_llm_message is already set, I just log and
+        return. Otherwise I run filter_usable_chunks() to drop tiny empty snippets.
+        If every chunk fails the filter, I return an empty chunk list.
+        """
         if result.skip_llm_message or result.direct_answer is not None:
             log_retrieved_chunks(
                 document_id=document_id,
@@ -299,4 +362,3 @@ class RetrievalService:
             chunks=result.chunks,
         )
         return result
-

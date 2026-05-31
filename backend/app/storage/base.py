@@ -1,6 +1,8 @@
-"""Abstract file storage — local disk now, S3 later maybe.
+"""Abstract file storage — local disk now, S3-style backend later.
 
-save() returns a relative path string we store in the DB, not an absolute path.
+save() returns a relative path string stored in documents.storage_path, not an
+absolute path. That way you can move the upload root folder without updating
+every row in the database.
 """
 
 from __future__ import annotations

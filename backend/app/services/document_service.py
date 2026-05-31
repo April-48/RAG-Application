@@ -8,25 +8,33 @@ the RAG pipeline, not here — keeps uploads fast.
 from __future__ import annotations
 
 import uuid
+from io import BytesIO
 from pathlib import Path
 from typing import BinaryIO
 
 from sqlalchemy.orm import Session
 
+from app.core.config import get_settings
 from app.core.exceptions import (
     DocumentFileNotFoundError,
     DocumentNotFoundError,
-    UnsupportedFileTypeError,
+    InvalidUploadFilenameError,
 )
 from app.models.document import Document
 from app.rag.embedding_service import Embedder, get_embedding_service
 from app.rag.pipeline import RAGPipeline
 from app.repositories.chunk_repository import ChunkRepository
 from app.repositories.document_repository import DocumentRepository
+from app.services.upload_validation import (
+    ALLOWED_EXTENSIONS,
+    parse_allowed_extension,
+    read_upload_bytes,
+    sanitize_upload_filename,
+    stored_disk_filename,
+    validate_upload_content,
+)
 from app.storage.base import StorageBackend
 from app.storage.local_storage import LocalStorage
-
-ALLOWED_EXTENSIONS = {".pdf", ".txt", ".docx"}
 
 MEDIA_TYPES: dict[str, str] = {
     ".pdf": "application/pdf",
@@ -53,27 +61,34 @@ class DocumentService:
         self.pipeline = RAGPipeline(db, embedder=self.embedder)
 
     # Save a file to storage and create a DB row — returns before ingest finishes.
-    # Raises UnsupportedFileTypeError when the extension is not allowed.
+    # Validates extension, size, content, and filename before writing to disk.
     def upload(
         self, *, owner_id: uuid.UUID, filename: str, fileobj: BinaryIO
     ) -> Document:
-        extension = Path(filename).suffix.lower()
-        if extension not in ALLOWED_EXTENSIONS:
-            raise UnsupportedFileTypeError(extension)
+        if not filename or not filename.strip():
+            raise InvalidUploadFilenameError("Filename must not be empty")
 
+        extension = parse_allowed_extension(filename)
+        settings = get_settings()
+        data = read_upload_bytes(fileobj, settings.max_upload_bytes)
+        validate_upload_content(extension, data)
+
+        safe_filename = sanitize_upload_filename(filename, extension)
         document_id = uuid.uuid4()
+        disk_name = stored_disk_filename(document_id, extension)
+
         storage_path = self.storage.save(
             user_id=owner_id,
             document_id=document_id,
-            filename=filename,
-            fileobj=fileobj,
+            filename=disk_name,
+            fileobj=BytesIO(data),
         )
 
         try:
             document = self.documents.create(
                 document_id=document_id,
                 owner_id=owner_id,
-                filename=Path(filename).name,
+                filename=safe_filename,
                 file_type=extension.lstrip("."),
                 storage_path=storage_path,
                 visibility="private",

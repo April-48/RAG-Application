@@ -4,6 +4,14 @@ Common local dev fixes. Not a production runbook.
 
 ---
 
+## Upload rejected (400 / 413)
+
+- **Unsupported extension** — only PDF, TXT, and DOCX are allowed.
+- **Content mismatch** — renaming `.exe` to `.pdf` is rejected before ingestion (PDF must start with `%PDF-`, DOCX must be a ZIP containing `[Content_Types].xml`, TXT must be UTF-8).
+- **Too large** — default limit is 20 MB (`MAX_UPLOAD_SIZE_MB` in `.env`).
+
+This is lightweight validation, not malware scanning. See [known-limitations.md](known-limitations.md).
+
 ## LLM 502 / “language model is unavailable”
 
 - Check `OPENAI_API_KEY` in root `.env`

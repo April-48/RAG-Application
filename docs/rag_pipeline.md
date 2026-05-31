@@ -65,6 +65,16 @@ MVP default: **do not** block generation just because similarity is low. Let the
 
 After retrieval, chunks with fewer than ~30 non-whitespace characters are dropped. If all chunks fail this filter, the pipeline treats retrieval as empty.
 
+### Generation-time boilerplate filter
+
+Before the LLM call, `prepare_llm_chunks()` applies a **second lightweight filter** on top of ingestion cleanup:
+
+- Drops chunks where most lines match obvious conference/copyright/proceedings patterns.
+- Logs how many chunks were removed.
+- **Conservative fallback:** if every length-ok chunk looks like boilerplate, the original length-ok list is kept so real content is not over-filtered.
+
+Only chunks that survive this step are inserted into the prompt **and** shown as UI sources.
+
 ## Generation
 
 ### Prompt construction
@@ -78,6 +88,26 @@ The system prompt:
 - Give partial answers with uncertainty when context is incomplete.
 - Return the fixed insufficient-context line **only when context has no relevant information**.
 
+### Sources aligned with the prompt
+
+The UI **sources panel shows the same chunks passed to the LLM**, not the raw retrieval list.
+
+| Stage | What you see |
+| ----- | ------------ |
+| Raw retrieval | Logged as `raw_chunks=N` |
+| After `prepare_llm_chunks()` | Logged as `prompt_chunks=M` |
+| UI sources | `display_sources=M` (same list as prompt) |
+
+If nothing reaches the prompt (`prompt_chunks=0`), the answer is insufficient-context and **sources are empty** — even when retrieval returned rows earlier in the pipeline.
+
+### One retry on overly conservative LLM refusal
+
+If the LLM returns the exact insufficient-context message **but** usable prompt chunks exist and `context_chars ≥ 80`, the pipeline **retries once** with a slightly stronger user instruction asking for the best grounded partial answer.
+
+- At most **one** retry (`answer_path=llm_retry` on success).
+- Streaming uses the same rule (first attempt is buffered; retry tokens are streamed if needed).
+- Insufficient-context answers are **never** cached.
+
 ### Answer paths (logged)
 
 | Path | Meaning |
@@ -85,8 +115,9 @@ The system prompt:
 | `cache` | Redis hit |
 | `skip_llm` | Weak evidence / page or section not found |
 | `direct_extraction` | Beginning/ending/section rules |
-| `insufficient_guard` | No chunks or no usable text before LLM |
-| LLM | Normal grounded generation |
+| `insufficient_guard` | No chunks or no prompt-ready text before LLM |
+| `llm` | Normal grounded generation |
+| `llm_retry` | Second attempt after insufficient-context refusal |
 
 Insufficient-context answers are **not** written to Redis cache.
 
@@ -121,7 +152,7 @@ Useful loggers:
 - `app.rag.retrieval_service` — route, chunk scores, previews (250 chars)
 - `app.rag.prompt_builder` / `app.rag.generation` — context length before LLM
 - `app.rag.pipeline` — ingest count, answer path
-- `app.services.chat_service` — cache / insufficient guard
+- `app.services.chat_service` — cache / insufficient guard / answer summary (`raw_chunks`, `prompt_chunks`, `display_sources`)
 
 Example:
 
@@ -131,23 +162,22 @@ docker compose logs -f middleware | grep -E "Retrieval|LLM prompt|Answer path"
 
 ## Debugging insufficient-context answers
 
-If the UI shows **sources** but the answer says **the document does not provide enough information**, retrieval probably succeeded. The issue is usually **downstream**, not “no retrieval.” Check:
+If the answer says **the document does not provide enough information**:
 
-1. **Prompt content** — Are retrieved chunks actually in the `Document context:` block? Look for `context_chars=0` warnings.
-2. **Prompt wording** — Is the system prompt too conservative? (Should allow synthesis and partial answers.)
-3. **Threshold filtering** — Is `RETRIEVAL_ENFORCE_SIMILARITY_THRESHOLD=true` dropping good hits?
-4. **pgvector ordering** — Results must be ordered by ascending cosine distance (best match first).
-5. **Chunk text quality** — Are chunks PDF boilerplate, headers, or empty lines instead of body text? Re-ingest after cleanup changes.
-6. **Embedding mismatch** — Did ingestion and query use the same embedding provider/model/dimension?
-7. **Stale cache** — Clear chat history (clears Redis answers for that document) or disable cache while testing.
+1. **Check logs for chunk counts** — `raw_chunks`, `prompt_chunks`, and `display_sources` should match expectations. If `prompt_chunks=0`, sources should be empty in the UI.
+2. **Boilerplate filter** — Look for `Generation filter removed N obvious boilerplate chunk(s)`. Re-upload after ingest cleanup if chunks are mostly headers/copyright.
+3. **Retry** — Look for `Retrying LLM once after insufficient-context`. If `path=llm_retry`, the second attempt succeeded.
+4. **Prompt content** — `context_chars=0` with `prompt_chunks>0` means a bug in `build_context`.
+5. **Threshold filtering** — Is `RETRIEVAL_ENFORCE_SIMILARITY_THRESHOLD=true` dropping good hits?
+6. **Stale cache** — Clear chat history or disable cache while testing (insufficient answers are not cached, but old bad answers might be).
 
 Also check middleware logs for:
 
 ```
-LLM insufficient-context despite N chunks (context_chars=...)
+LLM insufficient-context despite N prompt chunk(s) (context_chars=...)
 ```
 
-That means chunks reached the LLM but the model still refused — focus on prompt and chunk quality.
+That means prompt chunks reached the LLM but the model still refused after at most one retry — focus on chunk quality or prompt wording.
 
 ## Manual regression checklist
 

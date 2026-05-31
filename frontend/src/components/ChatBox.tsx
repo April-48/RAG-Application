@@ -7,6 +7,7 @@
 import { useEffect, useRef, useState } from "react";
 
 import type { ChatMessage, Source } from "../types/chat";
+import TypingIndicator from "./chat/TypingIndicator";
 
 interface ChatBoxProps {
   messages: ChatMessage[];
@@ -27,6 +28,19 @@ interface ChatBoxProps {
   showSourcesPanel?: boolean;
   onOpenSourcesPanel?: () => void;
   className?: string;
+}
+
+/** True while waiting for the first assistant token (streaming / busy, no text yet). */
+function isPendingAssistantMessage(
+  message: ChatMessage,
+  index: number,
+  messages: ChatMessage[],
+  isLoading: boolean,
+): boolean {
+  if (index !== messages.length - 1) return false;
+  if (message.role !== "assistant") return false;
+  if (message.content.length > 0) return false;
+  return isLoading || !!message.streaming;
 }
 
 /** Center chat column with messages and a sticky input bar. */
@@ -55,7 +69,7 @@ export default function ChatBox({
 
   useEffect(() => {
     endRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages]);
+  }, [messages, busy]);
 
   /** Send the trimmed input if we're not already waiting on a reply. */
   const submit = () => {
@@ -144,6 +158,17 @@ export default function ChatBox({
           ) : (
             <div className="space-y-6" role="log" aria-label="Chat messages">
               {messages.map((m, i) => {
+                if (isPendingAssistantMessage(m, i, messages, busy)) {
+                  return (
+                    <div
+                      key={m.id ?? `assistant-pending-${i}`}
+                      className="flex justify-start"
+                    >
+                      <TypingIndicator />
+                    </div>
+                  );
+                }
+
                 const hasSources = !!m.sources && m.sources.length > 0;
                 const isUser = m.role === "user";
                 const bubbleClassName = `max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
@@ -154,9 +179,6 @@ export default function ChatBox({
                 const bubbleContent = (
                   <>
                     {m.content}
-                    {m.streaming && (
-                      <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse align-middle rounded-sm bg-indigo-300/80" />
-                    )}
                     {hasSources && (
                       <span
                         className={`mt-2 block text-[10px] ${isUser ? "text-indigo-100/90" : "text-slate-400"}`}
@@ -201,6 +223,16 @@ export default function ChatBox({
       )}
 
       <div className="sticky bottom-0 shrink-0 border-t border-white/50 bg-white/40 px-4 py-3 backdrop-blur-md">
+        {busy && (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mx-auto mb-2 flex w-full max-w-4xl items-center gap-2 rounded-lg border border-indigo-200/80 bg-indigo-50/90 px-3 py-2 text-sm text-indigo-900"
+          >
+            <TypingIndicatorDots />
+            AI is answering. Please wait…
+          </p>
+        )}
         {rateLimitWarning && (
           <p
             role="alert"
@@ -215,22 +247,34 @@ export default function ChatBox({
             onChange={(e) => setInput(e.target.value)}
             onKeyDown={handleKeyDown}
             rows={1}
-            placeholder="Message…"
+            placeholder={busy ? "AI is answering…" : "Message…"}
             aria-label="Message input"
-            className="glass-input min-h-[44px] flex-1 resize-none"
+            disabled={busy || loadingHistory || clearingHistory}
+            className="glass-input min-h-[44px] flex-1 resize-none disabled:cursor-not-allowed disabled:opacity-60"
           />
           <button
             type="button"
             onClick={submit}
-            disabled={busy || !input.trim()}
-            aria-label="Send message"
+            disabled={busy || !input.trim() || loadingHistory || clearingHistory}
+            aria-label={busy ? "Send message (disabled while AI is answering)" : "Send message"}
             className="btn-primary shrink-0 self-end"
           >
-            Send
+            {busy ? "Answering…" : "Send"}
           </button>
         </div>
       </div>
     </div>
+  );
+}
+
+/** Three bouncing dots — inline compact version for the input status bar. */
+function TypingIndicatorDots() {
+  return (
+    <span className="inline-flex shrink-0 items-center gap-0.5" aria-hidden="true">
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-500 [animation-delay:-0.2s]" />
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-500 [animation-delay:-0.1s]" />
+      <span className="h-1.5 w-1.5 animate-bounce rounded-full bg-indigo-500" />
+    </span>
   );
 }
 

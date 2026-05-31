@@ -1,4 +1,9 @@
-"""Lightweight text cleanup before chunking — empty lines, boilerplate, repeated headers."""
+"""Clean up raw text before chunking.
+
+PDF parsers often leave empty lines, copyright footers, and the same header on
+every page. This module strips that noise so embeddings and retrieval focus on
+real content. It runs right after extract_pages() and before split_pages().
+"""
 
 from __future__ import annotations
 
@@ -6,7 +11,8 @@ import re
 
 from app.rag.pdf_parser import PageText
 
-# Lines that are usually copyright / proceedings noise, not document content.
+# Lines that look like conference/copyright boilerplate, not document body text.
+# I match common phrases like "All rights reserved" or "Proceedings of the".
 _BOILERPLATE_RE = re.compile(
     r"(all rights reserved|copyright\s*©|©\s*\d{4}|proceedings of the|"
     r"doi:\s*10\.|isbn[:\s-]|published by|permission to (?:make digital|copy)|"
@@ -15,12 +21,17 @@ _BOILERPLATE_RE = re.compile(
     re.IGNORECASE,
 )
 
-# Very short lines that repeat on many pages are often page numbers or running headers.
+# Lines shorter than this are often page numbers or running headers.
+# I only count longer lines when looking for text repeated across pages.
 _MIN_REPEAT_LINE_LEN = 12
 
 
-# Drop empty lines and obvious boilerplate from one page of extracted text.
 def clean_page_text(text: str) -> str:
+    """Clean one page of extracted text.
+
+    I drop blank lines and lines that match obvious boilerplate patterns.
+    The result keeps normal body text, one line per row, joined with newlines.
+    """
     lines: list[str] = []
     for line in text.splitlines():
         stripped = line.strip()
@@ -32,8 +43,16 @@ def clean_page_text(text: str) -> str:
     return "\n".join(lines)
 
 
-# Clean each page and remove lines repeated across many pages (headers/footers).
 def clean_pages(pages: list[PageText]) -> list[PageText]:
+    """Clean every page and remove headers/footers that repeat on many pages.
+
+    Step 1: run clean_page_text on each page and drop pages that end up empty.
+    Step 2: if there are at least 3 numbered pages (PDF), find lines that show
+    up on many pages — those are usually headers or footers — and remove them.
+
+    The repeat threshold is 40% of page count (minimum 2). So on a 10-page PDF,
+    a line must appear on at least 4 pages before I treat it as noise.
+    """
     if not pages:
         return []
 
@@ -74,7 +93,17 @@ def clean_pages(pages: list[PageText]) -> list[PageText]:
     return cleaned
 
 
-def _is_boilerplate_line(line: str) -> bool:
+def is_boilerplate_line(line: str) -> bool:
+    """Return True when a line looks like copyright or proceedings noise.
+
+    Very short lines (under 8 chars) are kept — they might be section numbers.
+    Longer lines are checked against _BOILERPLATE_RE.
+    """
     if len(line) < 8:
         return False
     return _BOILERPLATE_RE.search(line) is not None
+
+
+def _is_boilerplate_line(line: str) -> bool:
+    """Internal alias used by clean_page_text — same logic as is_boilerplate_line."""
+    return is_boilerplate_line(line)

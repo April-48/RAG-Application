@@ -1,6 +1,8 @@
-"""Chat sessions + messages persistence.
+"""Database access for chat sessions and messages.
 
-One session per (user, document). History survives page refresh.
+The MVP keeps one chat session per (user, document) pair. Messages append to
+that session so conversation history survives a page refresh. Assistant messages
+can store sources_json — the chunk citations the UI shows under each answer.
 """
 
 from __future__ import annotations
@@ -15,18 +17,20 @@ from app.models.chat_session import ChatSession
 from app.models.message import Message
 
 
-# Read/write chat_sessions and messages for one user + document pair.
 class ChatRepository:
+    """Read and write chat_sessions and messages for one user + document."""
 
-    # Store the DB session this repo uses for every query.
     def __init__(self, db: Session) -> None:
+        """Store the DB session used for every query in this repository."""
         self.db = db
 
-    # Find an existing session for this user and document.
-    # Output: ChatSession row or None if no conversation started yet.
     def get_session(
         self, *, user_id: uuid.UUID, document_id: uuid.UUID
     ) -> ChatSession | None:
+        """Find an existing session for this user chatting about this document.
+
+        Returns None when the user has never asked a question on this doc yet.
+        """
         return self.db.scalar(
             select(ChatSession)
             .where(
@@ -36,10 +40,14 @@ class ChatRepository:
             .order_by(ChatSession.created_at.asc())
         )
 
-    # Return the session for (user, doc), creating one on the first message.
     def get_or_create_session(
         self, *, user_id: uuid.UUID, document_id: uuid.UUID
     ) -> ChatSession:
+        """Return the session for (user, doc), creating one on the first message.
+
+        ChatService calls this at the start of every ask() so the user question
+        can be saved before retrieval runs.
+        """
         session = self.get_session(user_id=user_id, document_id=document_id)
         if session is not None:
             return session
@@ -49,8 +57,6 @@ class ChatRepository:
         self.db.refresh(session)
         return session
 
-    # Append one chat message to a session.
-    # Assistant rows may carry sources_json with chunk citations.
     def add_message(
         self,
         *,
@@ -59,6 +65,11 @@ class ChatRepository:
         content: str,
         sources_json: Any | None = None,
     ) -> Message:
+        """Append one chat line to a session.
+
+        role is 'user' or 'assistant'. Assistant rows may include sources_json
+        with chunk_index, page_number, and chunk_text for citations.
+        """
         message = Message(
             session_id=session_id,
             role=role,
@@ -70,8 +81,11 @@ class ChatRepository:
         self.db.refresh(message)
         return message
 
-    # List the full conversation for a session, oldest first — GET /history.
     def list_messages(self, session_id: uuid.UUID) -> list[Message]:
+        """Return the full conversation for a session, oldest message first.
+
+        Used by GET /history so the frontend can rebuild the chat UI on load.
+        """
         return list(
             self.db.scalars(
                 select(Message)
@@ -80,9 +94,12 @@ class ChatRepository:
             )
         )
 
-    # Delete every message in a session — DELETE /history.
-    # Output: number of rows removed (0 when the session had no messages).
     def clear_messages(self, session_id: uuid.UUID) -> int:
+        """Delete every message in a session — used by DELETE /history.
+
+        Returns the number of rows removed. Returns 0 when the session had no
+        messages (session row itself is kept).
+        """
         count = self.db.scalar(
             select(func.count())
             .select_from(Message)

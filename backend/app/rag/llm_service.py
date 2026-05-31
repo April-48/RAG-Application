@@ -1,6 +1,10 @@
-"""LLM wrapper — OpenAI or any OpenAI-compatible endpoint.
+"""LLM wrapper — OpenAI or any OpenAI-compatible chat endpoint.
 
-get_llm_service() reads LLM_MODEL / LLM_BASE_URL from settings.
+get_llm_service() reads LLM_MODEL, LLM_BASE_URL, and OPENAI_API_KEY from
+settings. Works with OpenAI, OpenRouter, Ollama, vLLM, etc. when the server
+speaks the OpenAI chat completions API.
+
+Temperature is fixed at 0 for grounded, repeatable answers.
 """
 
 from __future__ import annotations

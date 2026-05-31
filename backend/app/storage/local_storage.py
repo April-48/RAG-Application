@@ -1,6 +1,8 @@
-"""Save uploads under uploads/{user_id}/{document_id}/ on local disk.
+"""Save uploaded files under uploads/{user_id}/{document_id}/ on local disk.
 
-DB stores a path relative to upload_dir so we can move the root folder later.
+The database stores a path relative to upload_dir (from UPLOAD_DIR in settings).
+DocumentService passes a stable disk filename like {document_id}.pdf so the
+original user filename never touches the filesystem directly.
 """
 
 from __future__ import annotations
@@ -28,7 +30,7 @@ class LocalStorage(StorageBackend):
         return self.root / str(user_id) / str(document_id)
 
     # Copy upload bytes to disk and return a path relative to the upload root.
-    # I strip path traversal from the filename and keep the basename only.
+    # Caller supplies the disk filename (typically {document_id}{extension}).
     def save(
         self,
         *,
@@ -37,12 +39,11 @@ class LocalStorage(StorageBackend):
         filename: str,
         fileobj: BinaryIO,
     ) -> str:
-        # Strip ../../etc/passwd style tricks — keep basename only.
-        safe_name = Path(filename).name or "original_file"
+        disk_name = Path(filename).name or "original_file"
         doc_dir = self._document_dir(user_id, document_id)
         doc_dir.mkdir(parents=True, exist_ok=True)
 
-        dest = doc_dir / safe_name
+        dest = doc_dir / disk_name
         with dest.open("wb") as out:
             shutil.copyfileobj(fileobj, out)
 

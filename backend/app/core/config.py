@@ -61,6 +61,12 @@ class Settings(BaseSettings):
 
     # Where uploaded files live on disk: {upload_dir}/{user_id}/{document_id}/
     upload_dir: str = "backend/storage/uploads"
+    # Maximum upload size in megabytes (extension + content validated separately).
+    max_upload_size_mb: int = 20
+
+    @property
+    def max_upload_bytes(self) -> int:
+        return self.max_upload_size_mb * 1024 * 1024
 
 
 # I cache Settings so every import shares one parsed config object.

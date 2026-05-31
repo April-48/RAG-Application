@@ -63,6 +63,17 @@ You can also open the live OpenAPI docs at `http://localhost:8000/docs`.
 
 **POST `/documents/upload`** — send `multipart/form-data` with a `file` field.
 
+Upload validation: extension whitelist, size limit (`MAX_UPLOAD_SIZE_MB`, default **20**), basic content checks, filename sanitization.
+
+| Condition | HTTP |
+| --------- | ---- |
+| Missing file / empty filename | **400** |
+| Unsupported extension | **400** |
+| Content does not match extension | **400** |
+| File too large | **413** |
+
+Files are stored on disk as `{document_id}{extension}`; the sanitized original basename is kept in `filename` for download/display.
+
 Allowed file types: `.pdf`, `.txt`, `.docx`.
 
 ```json

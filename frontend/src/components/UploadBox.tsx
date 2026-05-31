@@ -14,11 +14,18 @@ interface UploadBoxProps {
 }
 
 const ACCEPTED = [".pdf", ".txt", ".docx"];
+const MAX_UPLOAD_MB = 20;
+const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
 /** Check if the file extension is one we accept. */
 function isAccepted(file: File): boolean {
   const name = file.name.toLowerCase();
   return ACCEPTED.some((ext) => name.endsWith(ext));
+}
+
+/** Client-side size guard — backend enforces the same limit. */
+function isWithinSizeLimit(file: File): boolean {
+  return file.size <= MAX_UPLOAD_BYTES;
 }
 
 /** Drag-and-drop upload area with progress bar. */
@@ -34,6 +41,10 @@ export default function UploadBox({ onUploaded }: UploadBoxProps) {
   const upload = async (file: File) => {
     if (!isAccepted(file)) {
       setError("Unsupported file type. Allowed: PDF, TXT, or DOCX");
+      return;
+    }
+    if (!isWithinSizeLimit(file)) {
+      setError(`File is too large. Maximum size is ${MAX_UPLOAD_MB} MB.`);
       return;
     }
     setBusy(true);
@@ -105,7 +116,7 @@ export default function UploadBox({ onUploaded }: UploadBoxProps) {
           }}
           className="text-sm text-slate-600 file:mr-3 file:cursor-pointer file:rounded-xl file:border-0 file:bg-white/70 file:px-4 file:py-2 file:font-medium file:text-indigo-700 file:shadow-sm file:backdrop-blur-sm hover:file:bg-white/90 disabled:opacity-50"
         />
-        <p className="text-xs text-slate-400">PDF, TXT, or DOCX</p>
+        <p className="text-xs text-slate-400">PDF, TXT, or DOCX · max {MAX_UPLOAD_MB} MB</p>
       </div>
 
       {busy && (

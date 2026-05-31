@@ -160,6 +160,7 @@ cp .env.example .env
 | `ENABLE_RATE_LIMIT` | Chat rate limit | `true` in `.env.example`; code defaults to `false` without `.env`; ask routes only; fail-open if Redis is down |
 | `CHAT_RATE_LIMIT_PER_MINUTE` | Rate limit cap | Default **10** per user per minute |
 | `UPLOAD_DIR` | Upload folder | Default `backend/storage/uploads` |
+| `MAX_UPLOAD_SIZE_MB` | Max upload size | Default **20** MB; extension + content validated |
 
 **RAG tuning and debugging:** [rag_pipeline.md](rag_pipeline.md). See [`.env.example`](../.env.example) for the full list.
 

@@ -1,7 +1,10 @@
-"""DOCX -> plain text via python-docx (paragraphs + tables).
+"""Extract plain text from DOCX files.
 
-No real page numbers in DOCX, so we return one big PageText with page_number=None.
-Legacy .doc is not supported — only .docx.
+DOCX files do not have stable page numbers like PDFs, so I return everything
+as one big PageText block with page_number=None. Downstream chunking still
+works — you just cannot do page-specific lookups on DOCX uploads.
+
+Legacy .doc (Word 97) is not supported. Only modern .docx (ZIP + XML) works.
 """
 
 from __future__ import annotations
@@ -14,8 +17,12 @@ from docx.table import Table
 from app.rag.pdf_parser import PageText
 
 
-# Flatten a DOCX table to one line per row: cell | cell | cell.
 def _table_lines(table: Table) -> list[str]:
+    """Turn a DOCX table into plain text lines.
+
+    Each row becomes one line: cell1 | cell2 | cell3.
+    Empty cells are skipped so the line does not end with stray pipes.
+    """
     lines: list[str] = []
     for row in table.rows:
         cells = [cell.text.strip() for cell in row.cells]
@@ -25,9 +32,13 @@ def _table_lines(table: Table) -> list[str]:
     return lines
 
 
-# Return DOCX text as a single PageText with page_number=None.
-# Empty input yields one empty PageText so downstream splitting marks the doc failed.
 def extract_docx_pages(path: str | Path) -> list[PageText]:
+    """Read a DOCX file and return its text as a single PageText.
+
+    I walk paragraphs first, then tables, and join everything with newlines.
+    If the file is empty I still return one PageText with empty text so the
+    ingestion pipeline can mark the document as failed (zero chunks).
+    """
     document = DocxDocument(str(path))
 
     parts: list[str] = []

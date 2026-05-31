@@ -6,6 +6,14 @@ See [achieved-and-future-work.md](achieved-and-future-work.md) for what **is** b
 
 ---
 
+## Single active stream
+
+The MVP supports one active streaming answer per browser session. This keeps UI state and SSE cancellation simple. Multi-chat concurrent streaming is future work.
+
+While the assistant is answering, the send button and message input are disabled, document switching in the sidebar is locked, and the UI shows a typing indicator plus “AI is answering. Please wait…”
+
+---
+
 ## Single document only
 
 Chat is tied to one selected file. No “search all my uploads.”
@@ -48,6 +56,7 @@ See [rag_pipeline.md](../rag_pipeline.md) for tuning and debugging.
 
 ## Other gaps
 
+- Upload validation checks extension, size (default 20 MB), basic content signatures (PDF header, DOCX ZIP structure, UTF-8 text), and sanitizes filenames — **not** full malware scanning or antivirus
 - Redis rate limit is a basic demo guard, not real abuse prevention
 - Answer cache expires by TTL; it is **not** invalidated when document chunks change — use **Clear chat history** or re-upload to avoid stale cached answers for that document
 - Insufficient-context answers are never cached
