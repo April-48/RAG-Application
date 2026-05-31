@@ -1,6 +1,8 @@
 # RAG Document Q&A App
 
-A full-stack RAG application where users upload PDF/TXT/DOCX files, ask questions about a **selected document**, and receive answers grounded in retrieved chunks—with cited sources. This is an **MVP** built for coursework and demos; detailed design lives under [`docs/`](docs/).
+A full-stack RAG application where users upload PDF/TXT/DOCX files, ask questions about a **selected document**, and receive answers grounded in retrieved chunks—with cited sources. This is a **coursework MVP** (Docker Compose on a laptop) with clear frontend/API/backend separation and documented scalability paths — not a production deployment.
+
+> The local version is a Docker Compose MVP, but the architecture separates frontend, API, backend logic, database, cache, and storage. That makes it possible to scale the API horizontally, move ingestion to workers, replace local storage with S3, and upgrade vector search as data grows.
 
 ## Features
 
@@ -11,6 +13,7 @@ A full-stack RAG application where users upload PDF/TXT/DOCX files, ask question
 - Single-document chat sessions with grounded source snippets
 - Streaming chat responses via SSE
 - Optional Redis answer cache for repeated questions (fail-open if Redis is down)
+- Optional Redis chat rate limiting on LLM ask endpoints (10/min per user, fail-open)
 - Owner-scoped document access — users cannot read each other's files
 - Rename documents, search lists, open original uploads, deep link chat via `?doc=`
 
@@ -22,7 +25,7 @@ A full-stack RAG application where users upload PDF/TXT/DOCX files, ask question
 | API layer | FastAPI, Pydantic, JWT |
 | Application/core layer | Python services, repositories, RAG pipeline (`app` package) |
 | Database | PostgreSQL 16 + pgvector |
-| Cache | Redis (optional, answer cache only) |
+| Cache | Redis (optional answer cache + chat rate limit) |
 | Migrations | Alembic |
 | Storage | Local disk (MVP); S3-compatible backend planned |
 | LLM / embeddings | OpenAI-compatible chat; local MiniLM or OpenAI embeddings via env config |
@@ -35,7 +38,16 @@ Layered layout in one repo — **logical separation**, not three deployed servic
 2. **API layer** — FastAPI routes, JWT auth, request validation, HTTP error mapping (`middleware/app/` in the repo).
 3. **Application/core layer** — models, repositories, services, storage, cache, RAG pipeline. Installed editable (`pip install -e ./backend`) and imported **in-process** by FastAPI.
 
-This keeps local setup simple while preserving clear boundaries for future workers or service extraction.
+This keeps local setup simple while preserving clear boundaries for workers or service extraction later — which is what the grading rubric asks for on system design.
+
+**Submission artifacts (docs):**
+
+| Artifact | Link |
+| -------- | ---- |
+| System design (incl. scalability) | [docs/system_design.md](docs/system_design.md) |
+| Achieved vs future work | [docs/engineering-notes/achieved-and-future-work.md](docs/engineering-notes/achieved-and-future-work.md) |
+| Known limitations | [docs/engineering-notes/known-limitations.md](docs/engineering-notes/known-limitations.md) |
+| GitHub repo | [April-48/RAG-Application](https://github.com/April-48/RAG-Application) |
 
 **Full design:**
 
@@ -47,21 +59,36 @@ This keeps local setup simple while preserving clear boundaries for future worke
 
 **Full guide:** [Setup Guide](docs/setup.md)
 
-**Fast path** (after Docker, Python 3.12+, Node 20):
+### Option A — Docker Compose (full stack)
+
+```bash
+chmod +x scripts/docker_setup.sh scripts/docker_start.sh
+./scripts/docker_setup.sh          # build, start, migrate (first time)
+./scripts/docker_start.sh          # later restarts
+```
+
+Or manually:
+
+```bash
+cp .env.example .env          # set OPENAI_API_KEY for chat
+docker compose up --build
+docker compose run --rm middleware bash -lc "cd /app/backend && alembic upgrade head"
+```
+
+Open [http://localhost:5173](http://localhost:5173) · API docs [http://localhost:8000/docs](http://localhost:8000/docs)
+
+### Option B — Host dev (scripts + db/redis in Docker)
 
 ```bash
 chmod +x scripts/dev_setup.sh scripts/dev_start.sh
 ./scripts/dev_setup.sh          # env, docker db+redis, deps, migrations
-./scripts/dev_start.sh          # FastAPI API server on :8000
+./scripts/dev_start.sh          # API on :8000
+cd frontend && npm run dev      # second terminal → :5173
 ```
 
-**Second terminal — frontend:**
+Use **localhost** `DATABASE_URL` / `REDIS_URL` in `.env` for Option B.
 
-```bash
-cd frontend && npm run dev
-```
-
-Open [http://localhost:5173](http://localhost:5173). Set `OPENAI_API_KEY` (or `LLM_BASE_URL` for a local server) in `.env` before chat.
+Set `OPENAI_API_KEY` (or `LLM_BASE_URL`) before testing chat.
 
 **Health check:** `GET http://localhost:8000/health` → `{"status":"ok"}`
 
@@ -81,13 +108,14 @@ Open [http://localhost:5173](http://localhost:5173). Set `OPENAI_API_KEY` (or `L
 
 | Document | Purpose |
 | -------- | ------- |
-| [System Design](docs/system_design.md) | Architecture, data model, RAG flows |
+| [System Design](docs/system_design.md) | Architecture, scalability, RAG flows |
+| [Achieved vs Future Work](docs/engineering-notes/achieved-and-future-work.md) | What ships vs production next steps |
 | [API Design](docs/api_design.md) | HTTP API surface |
 | [Setup Guide](docs/setup.md) | Prerequisites, env vars, commands |
 | [Demo Checklist](docs/engineering-notes/demo-checklist.md) | Pre-demo self-check |
 | [Known Limitations](docs/engineering-notes/known-limitations.md) | MVP boundaries |
 | [Troubleshooting](docs/engineering-notes/troubleshooting.md) | Common local fixes |
-| [ADRs](docs/adr/) | Why we chose this stack and scope |
+| [ADRs](docs/adr/) | Why I chose this stack and scope |
 
 **Key ADRs:**
 
@@ -101,6 +129,25 @@ Open [http://localhost:5173](http://localhost:5173). Set `OPENAI_API_KEY` (or `L
 
 Layer notes: [frontend](frontend/README.md) · [API layer](middleware/README.md) · [application core](backend/README.md)
 
+## Testing
+
+**Backend** (pytest — auth, document ownership, RAG helpers, Redis cache keys, mocked chat):
+
+```bash
+cd backend
+pip install -e .
+pytest
+```
+
+**Frontend** validation uses TypeScript check + production build (no Playwright/Cypress):
+
+```bash
+cd frontend
+npm run build
+```
+
+Automated tests focus on core security and RAG assumptions. Real LLM or embedding APIs are **not** called in tests. End-to-end demo flow is validated manually with [`docs/engineering-notes/demo-checklist.md`](docs/engineering-notes/demo-checklist.md).
+
 ## Known Limitations
 
 This is an MVP, not a production RAG platform.
@@ -111,17 +158,10 @@ This is an MVP, not a production RAG platform.
 - Scanned/image-only PDFs need OCR (not implemented)
 - Redis cache may serve stale answers until TTL after re-ingest
 - Switching embedding dimensions requires migration and re-ingestion
+- Redis chat rate limiting is optional and fail-open (`ENABLE_RATE_LIMIT`); not production-grade abuse prevention
 
 **Full list:** [Known Limitations](docs/engineering-notes/known-limitations.md)
 
 ## Future Improvements
 
-- Redis + Celery/RQ for durable ingestion
-- S3-compatible object storage
-- Multi-document retrieval and shared document permissions
-- OCR for scanned PDFs
-- Cache invalidation on re-ingest
-- Rate limiting, audit logs, and stronger production controls
-- CI checks for migrations and backend tests
-
-See also scalability and production notes in [System Design](docs/system_design.md) and individual ADRs.
+See [System Design](docs/system_design.md) and [Achieved vs Future Work](docs/engineering-notes/achieved-and-future-work.md).

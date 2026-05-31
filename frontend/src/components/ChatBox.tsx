@@ -12,6 +12,7 @@ interface ChatBoxProps {
   messages: ChatMessage[];
   busy: boolean;
   error: string | null;
+  rateLimitWarning?: string | null;
   loadingHistory: boolean;
   onSend: (question: string) => void;
   onSelectSources?: (sources: Source[]) => void;
@@ -31,6 +32,7 @@ export default function ChatBox({
   messages,
   busy,
   error,
+  rateLimitWarning = null,
   loadingHistory,
   onSend,
   onSelectSources,
@@ -126,53 +128,53 @@ export default function ChatBox({
               Ask a question about this document.
             </p>
           ) : (
-            <ul className="space-y-6">
+            <div className="space-y-6" role="log" aria-label="Chat messages">
               {messages.map((m, i) => {
                 const hasSources = !!m.sources && m.sources.length > 0;
                 const isUser = m.role === "user";
+                const bubbleClassName = `max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
+                  isUser
+                    ? "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-indigo-500/20"
+                    : "border border-white/60 bg-white/60 text-slate-800 backdrop-blur-md"
+                } ${hasSources ? "cursor-pointer text-left transition hover:ring-2 hover:ring-indigo-300/50" : ""}`;
+                const bubbleContent = (
+                  <>
+                    {m.content}
+                    {m.streaming && (
+                      <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse align-middle rounded-sm bg-indigo-300/80" />
+                    )}
+                    {hasSources && (
+                      <span
+                        className={`mt-2 block text-[10px] ${isUser ? "text-indigo-100/90" : "text-slate-400"}`}
+                      >
+                        {m.sources!.length} source
+                        {m.sources!.length > 1 ? "s" : ""} · click to view
+                      </span>
+                    )}
+                  </>
+                );
                 return (
-                  <li
-                    key={i}
+                  <div
+                    key={m.id ?? `${m.role}-${m.content.slice(0, 32)}-${i}`}
                     className={`flex ${isUser ? "justify-end" : "justify-start"}`}
                   >
-                    <div
-                      role={hasSources ? "button" : undefined}
-                      tabIndex={hasSources ? 0 : undefined}
-                      onClick={() =>
-                        hasSources && onSelectSources?.(m.sources as Source[])
-                      }
-                      onKeyDown={(e) => {
-                        if (
-                          hasSources &&
-                          (e.key === "Enter" || e.key === " ")
-                        ) {
-                          e.preventDefault();
-                          onSelectSources?.(m.sources as Source[]);
+                    {hasSources ? (
+                      <button
+                        type="button"
+                        onClick={() =>
+                          onSelectSources?.(m.sources as Source[])
                         }
-                      }}
-                      className={`max-w-[85%] whitespace-pre-wrap rounded-2xl px-4 py-3 text-sm leading-relaxed shadow-sm ${
-                        isUser
-                          ? "bg-gradient-to-br from-indigo-600 to-violet-600 text-white shadow-indigo-500/20"
-                          : "border border-white/60 bg-white/60 text-slate-800 backdrop-blur-md"
-                      } ${hasSources ? "cursor-pointer transition hover:ring-2 hover:ring-indigo-300/50" : ""}`}
-                    >
-                      {m.content}
-                      {m.streaming && (
-                        <span className="ml-0.5 inline-block h-4 w-1.5 animate-pulse align-middle rounded-sm bg-indigo-300/80" />
-                      )}
-                      {hasSources && (
-                        <span
-                          className={`mt-2 block text-[10px] ${isUser ? "text-indigo-100/90" : "text-slate-400"}`}
-                        >
-                          {m.sources!.length} source
-                          {m.sources!.length > 1 ? "s" : ""} · click to view
-                        </span>
-                      )}
-                    </div>
-                  </li>
+                        className={bubbleClassName}
+                      >
+                        {bubbleContent}
+                      </button>
+                    ) : (
+                      <div className={bubbleClassName}>{bubbleContent}</div>
+                    )}
+                  </div>
                 );
               })}
-            </ul>
+            </div>
           )}
           <div ref={endRef} className="h-px" />
         </div>
@@ -185,6 +187,14 @@ export default function ChatBox({
       )}
 
       <div className="sticky bottom-0 shrink-0 border-t border-white/50 bg-white/40 px-4 py-3 backdrop-blur-md">
+        {rateLimitWarning && (
+          <p
+            role="alert"
+            className="mx-auto mb-2 w-full max-w-4xl rounded-lg border border-amber-200/80 bg-amber-50/90 px-3 py-2 text-sm text-amber-900"
+          >
+            {rateLimitWarning}
+          </p>
+        )}
         <div className="mx-auto flex w-full max-w-4xl gap-2">
           <textarea
             value={input}

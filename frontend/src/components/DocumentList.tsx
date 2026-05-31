@@ -10,6 +10,7 @@ import { ApiError } from "../api/client";
 import { documentApi } from "../api/documentApi";
 import type { Document, DocumentStatus } from "../types/document";
 import { documentLabel } from "../utils/documentLabel";
+import ConfirmDialog from "./ConfirmDialog";
 
 const STATUS_CONFIG: Record<
   DocumentStatus,
@@ -93,7 +94,7 @@ function StatusBadge({ status }: { status: DocumentStatus }) {
 interface DocumentListProps {
   documents: Document[];
   searchActive?: boolean;
-  onDelete: (id: string) => void;
+  onDelete: (id: string) => Promise<void> | void;
   onRenamed: () => void;
 }
 
@@ -110,6 +111,20 @@ export default function DocumentList({
   const [renameValue, setRenameValue] = useState("");
   const [renameError, setRenameError] = useState<string | null>(null);
   const [renameBusy, setRenameBusy] = useState(false);
+  const [deleteTarget, setDeleteTarget] = useState<Document | null>(null);
+  const [deleteBusy, setDeleteBusy] = useState(false);
+
+  /** Run delete after the user confirms in the modal. */
+  const confirmDelete = async () => {
+    if (!deleteTarget) return;
+    setDeleteBusy(true);
+    try {
+      await onDelete(deleteTarget.id);
+      setDeleteTarget(null);
+    } finally {
+      setDeleteBusy(false);
+    }
+  };
 
   /** Open the original file in a new tab or download it. */
   const handleView = async (doc: Document) => {
@@ -181,8 +196,30 @@ export default function DocumentList({
     );
   }
 
+  const hasProcessing = documents.some(
+    (doc) => doc.status === "uploaded" || doc.status === "processing",
+  );
+
   return (
     <>
+      {hasProcessing && (
+        <p className="mb-3 rounded-xl border border-amber-200/80 bg-amber-50/70 px-3 py-2 text-sm text-amber-900 backdrop-blur-sm">
+          Some documents are still processing. When status shows{" "}
+          <span className="font-medium">Ready</span>, open Chat to ask questions.
+        </p>
+      )}
+      {deleteTarget && (
+        <ConfirmDialog
+          title="Delete document?"
+          message={`Delete "${documentLabel(deleteTarget)}"? This cannot be undone.`}
+          confirmLabel="Delete"
+          busy={deleteBusy}
+          onCancel={() => {
+            if (!deleteBusy) setDeleteTarget(null);
+          }}
+          onConfirm={() => void confirmDelete()}
+        />
+      )}
       {viewError && (
         <p className="mb-3 rounded-xl border border-red-200/80 bg-red-50/70 px-3 py-2 text-sm text-red-700 backdrop-blur-sm">
           {viewError}
@@ -204,6 +241,7 @@ export default function DocumentList({
                     maxLength={120}
                     disabled={renameBusy}
                     className="glass-input w-full max-w-md text-sm"
+                    aria-label="Document name"
                     autoFocus
                     onKeyDown={(e) => {
                       if (e.key === "Enter") void submitRename(doc);
@@ -254,6 +292,11 @@ export default function DocumentList({
                     {doc.display_name && (
                       <span className="ml-1 text-slate-300">· {doc.filename}</span>
                     )}
+                    {doc.status === "ready" && (
+                      <span className="ml-1 font-medium text-emerald-600">
+                        · Ready to chat
+                      </span>
+                    )}
                   </p>
                 </>
               )}
@@ -281,7 +324,7 @@ export default function DocumentList({
                 )}
                 <button
                   type="button"
-                  onClick={() => onDelete(doc.id)}
+                  onClick={() => setDeleteTarget(doc)}
                   className="rounded-lg px-2 py-1 text-xs font-medium text-red-600 transition hover:bg-red-50/80"
                 >
                   Delete

@@ -129,7 +129,7 @@ function DocumentSidebar({
             No ready documents match your search.
           </p>
         ) : (
-          <ul className="space-y-0.5" role="listbox" aria-label="Ready documents">
+          <ul className="space-y-0.5" aria-label="Ready documents">
             {filteredReady.map((doc) => {
               const selected = doc.id === selectedId;
               const label = documentLabel(doc);
@@ -137,8 +137,7 @@ function DocumentSidebar({
                 <li key={doc.id}>
                   <button
                     type="button"
-                    role="option"
-                    aria-selected={selected}
+                    aria-current={selected ? "true" : undefined}
                     onClick={() => onSelect(doc.id)}
                     className={`flex w-full items-center gap-2.5 rounded-xl px-2.5 py-2.5 text-left text-sm transition ${
                       selected
@@ -178,7 +177,8 @@ function ChatSession({
   onOpenSources: () => void;
   onCloseSources: () => void;
 }) {
-  const { messages, busy, error, loadingHistory, send } = useChat(documentId);
+  const { messages, busy, error, rateLimitWarning, loadingHistory, send } =
+    useChat(documentId);
   const [pinnedSources, setPinnedSources] = useState<Source[] | null>(null);
   const [openingFile, setOpeningFile] = useState(false);
   const [fileError, setFileError] = useState<string | null>(null);
@@ -226,6 +226,7 @@ function ChatSession({
         messages={messages}
         busy={busy}
         error={error}
+        rateLimitWarning={rateLimitWarning}
         loadingHistory={loadingHistory}
         onSend={handleSend}
         documentTitle={documentLabel(selectedDoc)}
@@ -299,7 +300,7 @@ function CenterEmptyState({
 
 /** Three-column chat page — pick a doc, ask questions, view sources. */
 export default function ChatPage() {
-  const { documents, loading } = useDocuments();
+  const { documents, loading, error: documentsError } = useDocuments();
   const [searchParams, setSearchParams] = useSearchParams();
   const docParam = searchParams.get("doc") ?? "";
   const [selectedId, setSelectedId] = useState("");
@@ -318,9 +319,20 @@ export default function ChatPage() {
 
   useEffect(() => {
     if (loading) return;
-    if (!docParam) return;
-    setSelectedId(readyIds.has(docParam) ? docParam : "");
-  }, [docParam, loading, readyIds]);
+    if (docParam && readyIds.has(docParam)) {
+      setSelectedId(docParam);
+      return;
+    }
+    if (docParam && !readyIds.has(docParam)) {
+      setSelectedId("");
+      return;
+    }
+    if (!docParam && readyDocuments.length > 0) {
+      const firstId = readyDocuments[0].id;
+      setSelectedId(firstId);
+      setSearchParams({ doc: firstId }, { replace: true });
+    }
+  }, [docParam, loading, readyDocuments, readyIds, setSearchParams]);
 
   /** Update selection and sync the ?doc= URL param. */
   const handleSelectDocument = (id: string) => {
@@ -339,6 +351,11 @@ export default function ChatPage() {
         <p className="page-subtitle">
           Ask questions grounded in your uploaded documents.
         </p>
+        {documentsError && (
+          <p className="mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+            Could not load your documents. Please refresh or try again.
+          </p>
+        )}
       </header>
 
       <div className="flex min-h-0 flex-1">

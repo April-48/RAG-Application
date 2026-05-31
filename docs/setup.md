@@ -7,20 +7,128 @@ For a pre-demo checklist, see [`engineering-notes/demo-checklist.md`](engineerin
 
 ---
 
-## Prerequisites
+## Testing
+
+### Backend (pytest)
+
+```bash
+cd backend
+pip install -e .
+pytest
+```
+
+Covers auth, document ownership/isolation, RAG helper logic, Redis answer-cache keys, and mocked `ChatService` flows. Tests do **not** call real LLM or embedding APIs.
+
+### Frontend
+
+```bash
+cd frontend
+npm run build
+```
+
+Frontend validation is TypeScript check + production build. Full signup → upload → chat → sources flow is checked manually via [`engineering-notes/demo-checklist.md`](engineering-notes/demo-checklist.md).
+
+---
+
+## Docker Compose (full stack)
+
+Run **Postgres, Redis, API, and frontend** in containers. The API container includes both the FastAPI layer and the in-process `app` backend package — there is no separate backend service.
+
+### 1. Copy env
+
+```bash
+cp .env.example .env
+```
+
+Edit `.env` and set `OPENAI_API_KEY` if you want real LLM answers. For Compose, `DATABASE_URL` / `REDIS_URL` in `.env.example` already use Docker service names (`db`, `redis`); the middleware service also sets these in `docker-compose.yml`.
+
+### 2. Build and start
+
+**Using scripts (recommended):**
+
+```bash
+chmod +x scripts/docker_setup.sh scripts/docker_start.sh scripts/docker_stop.sh
+./scripts/docker_setup.sh    # first time: build, start, migrate
+./scripts/docker_start.sh      # later restarts
+./scripts/docker_stop.sh       # stop (keeps volumes)
+```
+
+**Or manually:**
+
+```bash
+docker compose up --build -d
+```
+
+Wait until `db`, `redis`, and `middleware` are healthy (frontend starts after middleware).
+
+### 3. Run migrations (manual, first time or after volume reset)
+
+```bash
+docker compose run --rm middleware bash -lc "cd /app/backend && alembic upgrade head"
+```
+
+Migrations are **not** run automatically on container start.
+
+### 4. Open the app
+
+| URL | Purpose |
+| --- | ------- |
+| [http://localhost:5173](http://localhost:5173) | Frontend (Vite dev server) |
+| [http://localhost:8000/docs](http://localhost:8000/docs) | API docs |
+| `GET http://localhost:8000/health` | Health check → `{"status":"ok"}` |
+
+The browser calls the API at `http://localhost:8000` (`VITE_API_BASE_URL` on the frontend container).
+
+### 5. Quick test
+
+1. Sign up / log in  
+2. Upload a text-based PDF, TXT, or DOCX  
+3. Wait for `uploaded` → `processing` → `ready`  
+4. Ask a question in Chat; confirm streaming answer and sources  
+5. Open original file from Dashboard or Chat  
+6. Ask the **same question twice** (Redis cache demo — keep Redis running)  
+
+### Docker troubleshooting
+
+```bash
+docker compose ps
+docker compose logs middleware
+docker compose down          # stop, keep volumes
+docker compose down -v       # wipe DB/Redis/upload volumes
+```
+
+Uploads inside Compose persist in the `uploads_data` volume. Embedding model download on first ingest can take a while inside the middleware image.
+
+---
+
+## Host development (API + frontend on your machine)
+
+Use this if you prefer `./scripts/dev_setup.sh` and running uvicorn/Vite directly while only Postgres/Redis run in Docker.
+
+**Scripts:**
+
+| Script | Purpose |
+| ------ | ------- |
+| `scripts/docker_setup.sh` | Full stack in Docker — build, start, migrate |
+| `scripts/docker_start.sh` | Restart full Docker stack |
+| `scripts/docker_stop.sh` | Stop Docker stack (keep volumes) |
+| `scripts/dev_setup.sh` | Host dev — db/redis in Docker, install deps, migrate |
+| `scripts/dev_start.sh` | Run uvicorn on host (:8000) |
+
+`dev_setup.sh` sets `DATABASE_URL` / `REDIS_URL` to **localhost** when needed. `docker_setup.sh` uses **db** / **redis** service names (Compose also overrides these on the middleware container).
+
+### Prerequisites
 
 | Tool | Version / notes |
 | ---- | ---------------- |
-| Docker + Docker Compose | Postgres and Redis run in containers |
+| Docker + Docker Compose | Full stack via `docker compose up` **or** db/redis only for host dev |
 | Python | 3.12+ |
 | Node.js | 20+ (for the Vite frontend) |
 
-**How the pieces run locally:**
+**How the pieces can run:**
 
-- **Docker:** Postgres (`db`) and Redis (`redis`) only.
-- **Host machine:** FastAPI middleware on port **8000**, React frontend on **5173**.
-
-The backend is a Python package imported by the middleware — it is not a separate HTTP service in this setup.
+- **All in Docker:** `db`, `redis`, `middleware` (API + `app` package), `frontend` — see [Docker Compose](#docker-compose-full-stack) above.
+- **Hybrid (host dev):** Docker runs `db` + `redis` only; FastAPI and Vite run on your laptop.
 
 ---
 
@@ -47,7 +155,9 @@ cp .env.example .env
 
 **Important:** Postgres credentials in `docker-compose.yml` are `postgres` / `password` / database `rag_app`. Your `DATABASE_URL` must match when connecting from the host.
 
-**localhost vs Docker service names:** When uvicorn runs on your laptop, use `localhost` in `DATABASE_URL` and `REDIS_URL`. Use `@db` and `@redis` only if the middleware itself runs inside Compose.
+**localhost vs Docker service names:** When the API runs on your **host**, use `localhost` in `DATABASE_URL` and `REDIS_URL`. When the API runs **inside Compose**, use `@db` and `@redis` (see `.env.example`).
+
+For host dev with only db/redis in Docker, uncomment the localhost lines in `.env.example`.
 
 ### Frontend `frontend/.env`
 
@@ -121,10 +231,11 @@ chmod +x scripts/dev_setup.sh scripts/dev_start.sh
 This script:
 
 1. Creates `.env` and `frontend/.env` **only if missing** (never overwrites).
-2. Starts `db` and `redis`.
-3. Creates `.venv` and installs Python deps (`pip install -e ../backend` via `middleware/requirements.txt`).
-4. Runs `npm install` in `frontend/`.
-5. Runs `alembic upgrade head`.
+2. Ensures `.env` uses **localhost** for DB/Redis (host dev).
+3. Starts `db` and `redis` only (not middleware/frontend containers).
+4. Creates `.venv` and installs Python deps (`pip install -e ../backend` via `middleware/requirements.txt`).
+5. Runs `npm install` in `frontend/`.
+6. Runs `alembic upgrade head`.
 
 ### Option B — manual install
 

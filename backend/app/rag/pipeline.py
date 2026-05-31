@@ -17,7 +17,7 @@ from app.rag.embedding_service import Embedder, get_embedding_service
 from app.rag.llm_service import LLM, get_llm_service
 from app.rag.loader import extract_pages
 from app.rag.prompt_builder import build_messages
-from app.rag.retrieval_service import RetrievalService
+from app.rag.retrieval_service import RetrievalResult, RetrievalService
 from app.rag.text_splitter import split_pages
 from app.repositories.chunk_repository import ChunkRepository
 
@@ -58,19 +58,33 @@ class RAGPipeline:
             chunk.embedding = embedding
         return self.chunks.create_many(document_id, chunks)
 
-    # --- Q&A: embed question, pull top chunks, ask the LLM ---
+    # --- Q&A: route question, pull chunks, ask the LLM when needed ---
     def retrieve(
         self, document_id: uuid.UUID, question: str, top_k: int | None = None
-    ) -> list[DocumentChunk]:
-        """Return the top-k chunks for a question, scoped to one document."""
+    ) -> RetrievalResult:
+        """Return routed chunks (and optional direct answer metadata)."""
         return self.retrieval.retrieve(document_id, question, top_k)
 
-    def generate(self, question: str, chunks: list[DocumentChunk]) -> str:
-        """Generate a grounded answer from the retrieved chunks."""
-        return self.llm.generate(build_messages(question, chunks))
+    def generate(self, question: str, result: RetrievalResult) -> str:
+        """Generate a grounded answer from a retrieval result."""
+        if result.skip_llm_message:
+            return result.skip_llm_message
+        if result.direct_answer is not None:
+            return result.direct_answer
+        if not result.chunks:
+            return ""
+        return self.llm.generate(build_messages(question, result.chunks))
 
     def generate_stream(
-        self, question: str, chunks: list[DocumentChunk]
+        self, question: str, result: RetrievalResult
     ) -> Iterator[str]:
         """Stream a grounded answer token-by-token."""
-        yield from self.llm.generate_stream(build_messages(question, chunks))
+        if result.skip_llm_message:
+            yield result.skip_llm_message
+            return
+        if result.direct_answer is not None:
+            yield result.direct_answer
+            return
+        if not result.chunks:
+            return
+        yield from self.llm.generate_stream(build_messages(question, result.chunks))

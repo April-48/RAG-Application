@@ -1,9 +1,8 @@
 #!/usr/bin/env bash
-# One-time (or repeat-safe) local development setup for the RAG MVP.
+# Host development setup: Docker runs ONLY db + redis; API and Vite run locally.
 #
-# Assumes:
-#   - Docker runs ONLY Postgres (db) and Redis (redis) via docker compose.
-#   - Middleware (FastAPI) and frontend (Vite) run on the HOST machine.
+# For the full stack in Docker instead, use:
+#   ./scripts/docker_setup.sh
 #
 # Run from anywhere:
 #   ./scripts/dev_setup.sh
@@ -13,7 +12,12 @@ set -euo pipefail
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
-echo "==> RAG Application — dev setup (project root: $ROOT)"
+# shellcheck source=scripts/lib/env_urls.sh
+source "$ROOT/scripts/lib/env_urls.sh"
+
+echo "==> RAG Application — host dev setup (project root: $ROOT)"
+echo "    Docker: db + redis only | API + frontend: on your machine"
+echo "    Full Docker stack? Use ./scripts/docker_setup.sh instead."
 echo
 
 # --- Prerequisites -----------------------------------------------------------
@@ -48,8 +52,11 @@ if [[ ! -f .env ]]; then
   echo "    Created .env from .env.example"
   echo "    IMPORTANT: edit .env and set OPENAI_API_KEY before using chat."
 else
-  echo "    Skipped .env (already exists — not overwritten)"
+  echo "    Using existing .env (not overwritten)"
 fi
+
+# Host Alembic/uvicorn connect via published ports — not Docker service names.
+set_env_for_host .env
 
 if [[ ! -f frontend/.env ]]; then
   cp frontend/.env.example frontend/.env
@@ -60,10 +67,10 @@ fi
 
 echo
 
-# --- Docker: db + redis only -----------------------------------------------
-echo "==> Starting Docker infrastructure (db + redis)..."
+# --- Docker: db + redis only (not middleware/frontend containers) ------------
+echo "==> Starting Docker infrastructure (db + redis only)..."
 docker compose up -d db redis
-echo "    Waiting a few seconds for containers to become healthy..."
+echo "    Waiting for containers to become healthy..."
 sleep 5
 docker compose ps db redis
 echo
@@ -98,7 +105,7 @@ echo "    Database schema is up to date"
 echo
 
 # --- Done --------------------------------------------------------------------
-echo "==> Setup complete!"
+echo "==> Host dev setup complete!"
 echo
 echo "Next steps:"
 echo
@@ -106,12 +113,11 @@ echo "  1. Edit .env if needed (especially OPENAI_API_KEY for chat)."
 echo
 echo "  2. Terminal A — start the middleware API:"
 echo "       ./scripts/dev_start.sh"
-echo "     Or manually:"
-echo "       source .venv/bin/activate"
-echo "       uvicorn middleware.app.main:app --reload --port 8000"
 echo
 echo "  3. Terminal B — start the frontend:"
 echo "       cd frontend && npm run dev"
 echo
 echo "  4. Open http://localhost:5173 (API docs: http://localhost:8000/docs)"
+echo
+echo "  Full Docker stack instead: ./scripts/docker_setup.sh"
 echo

@@ -19,6 +19,7 @@ from app.core.exceptions import DocumentNotFoundError, DocumentNotReadyError, LL
 from app.models.user import User
 from app.services.chat_service import ChatService
 
+from ..dependencies.chat_rate_limit import get_current_user_with_chat_rate_limit
 from ..dependencies.get_current_user import get_current_user
 from ..schemas.chat_schema import (
     AnswerResponse,
@@ -34,7 +35,7 @@ router = APIRouter(prefix="/chat", tags=["chat"])
 def ask(
     document_id: uuid.UUID,
     payload: AskRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_with_chat_rate_limit),
     db: Session = Depends(get_db),
 ) -> AnswerResponse:
     """One-shot RAG answer + source chunks for a document question."""
@@ -69,7 +70,7 @@ def ask(
 def ask_stream(
     document_id: uuid.UUID,
     payload: AskRequest,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_user_with_chat_rate_limit),
     db: Session = Depends(get_db),
 ) -> StreamingResponse:
     """SSE stream of tokens, then sources, then done — same events on cache hit."""

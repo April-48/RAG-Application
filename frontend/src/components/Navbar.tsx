@@ -15,6 +15,7 @@ export default function Navbar() {
   const location = useLocation();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
+  const menuButtonRef = useRef<HTMLButtonElement>(null);
 
   useEffect(() => {
     if (!menuOpen) return;
@@ -42,6 +43,13 @@ export default function Navbar() {
   useEffect(() => {
     setMenuOpen(false);
   }, [location.pathname]);
+
+  useEffect(() => {
+    menuButtonRef.current?.setAttribute(
+      "aria-expanded",
+      menuOpen ? "true" : "false",
+    );
+  }, [menuOpen]);
 
   if (!isAuthenticated) return null;
 
@@ -89,10 +97,11 @@ export default function Navbar() {
 
         <div ref={menuRef} className="relative">
           <button
+            ref={menuButtonRef}
             type="button"
             onClick={() => setMenuOpen((open) => !open)}
             aria-label="Account menu"
-            aria-expanded={menuOpen}
+            aria-expanded="false"
             aria-haspopup="menu"
             className="inline-flex items-center gap-1 rounded-full border border-white/60 bg-white/40 px-3 py-1 text-xs text-slate-600 backdrop-blur-sm transition hover:bg-white/55"
           >

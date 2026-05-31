@@ -1,6 +1,8 @@
 # Known limitations
 
-This file documents the main MVP limitations so they are clear during demos, grading, and future planning. The app is a homework-scale project with scalability-aware design — not a fully production-hardened system.
+This file documents the main MVP limitations so they are clear during demos and grading. The app is a homework-scale project with scalability-aware design — not a fully production-hardened system.
+
+For what **is** implemented and how it scales in production, see [achieved-and-future-work.md](achieved-and-future-work.md) and [system design](../system_design.md).
 
 ---
 
@@ -52,8 +54,9 @@ Migration `0001_initial` creates a `document_permissions` table, but **routes an
 
 ## Other MVP gaps
 
-- No rate limiting or audit logs (normal for this scope; not claimed elsewhere as shipped features).
-- Redis cache is not invalidated on re-ingest — stale answers are possible until TTL.
+- **Redis chat rate limiting** is implemented as an optional, fail-open MVP feature. It can be enabled through environment configuration (`ENABLE_RATE_LIMIT=true`), but it is not intended as a full production-grade abuse-prevention system yet.
+- No monitoring or audit logs yet.
+- Redis answer cache is not invalidated on re-ingest — stale answers are possible until TTL.
 - No automated OCR, virus scan, or content moderation on uploads.
 - Chat deep links (`?doc=`) work for selecting a ready document, but edge cases such as a deleted document or lost access could use clearer UI handling.
 

@@ -98,8 +98,17 @@ class ChatService:
             )
             return answer, sources
 
-        chunks = self.pipeline.retrieve(document_id, question)
-        if not chunks:
+        result = self.pipeline.retrieve(document_id, question)
+        if result.skip_llm_message:
+            self.chats.add_message(
+                session_id=session_id,
+                role="assistant",
+                content=result.skip_llm_message,
+                sources_json=[_chunk_to_source(c) for c in result.chunks],
+            )
+            return result.skip_llm_message, [_chunk_to_source(c) for c in result.chunks]
+
+        if not result.chunks:
             self.chats.add_message(
                 session_id=session_id,
                 role="assistant",
@@ -108,8 +117,8 @@ class ChatService:
             )
             return INSUFFICIENT_CONTEXT_MESSAGE, []
 
-        answer = self.pipeline.generate(question, chunks)
-        sources = [_chunk_to_source(c) for c in chunks]
+        answer = self.pipeline.generate(question, result)
+        sources = [_chunk_to_source(c) for c in result.chunks]
 
         self.chats.add_message(
             session_id=session_id,
@@ -154,8 +163,23 @@ class ChatService:
                 yield {"type": "done"}
                 return
 
-            chunks = self.pipeline.retrieve(document_id, question)
-            if not chunks:
+            result = self.pipeline.retrieve(document_id, question)
+            if result.skip_llm_message:
+                self.chats.add_message(
+                    session_id=session_id,
+                    role="assistant",
+                    content=result.skip_llm_message,
+                    sources_json=[_chunk_to_source(c) for c in result.chunks],
+                )
+                yield {"type": "token", "data": result.skip_llm_message}
+                yield {
+                    "type": "sources",
+                    "data": [_chunk_to_source(c) for c in result.chunks],
+                }
+                yield {"type": "done"}
+                return
+
+            if not result.chunks:
                 self.chats.add_message(
                     session_id=session_id,
                     role="assistant",
@@ -168,12 +192,12 @@ class ChatService:
                 return
 
             parts: list[str] = []
-            for token in self.pipeline.generate_stream(question, chunks):
+            for token in self.pipeline.generate_stream(question, result):
                 parts.append(token)
                 yield {"type": "token", "data": token}
 
             answer = "".join(parts).strip()
-            sources = [_chunk_to_source(c) for c in chunks]
+            sources = [_chunk_to_source(c) for c in result.chunks]
             self.chats.add_message(
                 session_id=session_id,
                 role="assistant",

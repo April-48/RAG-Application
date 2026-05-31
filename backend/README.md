@@ -22,7 +22,7 @@ app/
 │   ├── document_repository.py
 │   └── chunk_repository.py
 ├── services/              # Business logic / orchestration
-│   ├── user_service.py
+│   ├── auth_service.py
 │   ├── document_service.py
 │   └── chat_service.py
 ├── rag/                   # RAG pipeline stages

@@ -16,6 +16,7 @@ export interface AnswerResponse {
 
 /** One bubble in the Chat UI (not exactly the same as a DB Message row). */
 export interface ChatMessage {
+  id?: string;
   role: "user" | "assistant";
   content: string;
   sources?: Source[];

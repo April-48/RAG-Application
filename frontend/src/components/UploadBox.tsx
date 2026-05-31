@@ -27,6 +27,7 @@ export default function UploadBox({ onUploaded }: UploadBoxProps) {
   const [progress, setProgress] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [dragOver, setDragOver] = useState(false);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   /** Send the file to the API and notify the parent when done. */
@@ -37,9 +38,15 @@ export default function UploadBox({ onUploaded }: UploadBoxProps) {
     }
     setBusy(true);
     setError(null);
+    setSuccessMessage(null);
     setProgress(0);
     try {
       const document = await documentApi.upload(file, setProgress);
+      setSuccessMessage(
+        document.status === "ready"
+          ? "Ready to chat."
+          : "Document uploaded. It may take a few seconds to process. Once it shows Ready, you can start asking questions.",
+      );
       onUploaded(document);
     } catch (err) {
       setError(err instanceof ApiError ? err.message : "Upload failed");
@@ -119,6 +126,12 @@ export default function UploadBox({ onUploaded }: UploadBoxProps) {
       {error && (
         <p className="mt-4 rounded-xl border border-red-200/80 bg-red-50/70 px-3 py-2 text-center text-sm text-red-700 backdrop-blur-sm">
           {error}
+        </p>
+      )}
+
+      {successMessage && !busy && (
+        <p className="mt-4 rounded-xl border border-emerald-200/80 bg-emerald-50/70 px-3 py-2 text-center text-sm text-emerald-800 backdrop-blur-sm">
+          {successMessage}
         </p>
       )}
     </div>

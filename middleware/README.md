@@ -9,8 +9,6 @@ services. **No heavy business logic lives in route files.**
 ```
 app/
 ├── main.py                    # FastAPI app, router wiring
-├── core/
-│   └── config.py              # Settings from environment
 ├── dependencies/              # FastAPI route dependencies
 │   ├── get_current_user.py    # resolves bearer token -> User via backend
 │   └── permissions.py         # ownership / access-control checks

@@ -43,11 +43,17 @@ class Settings(BaseSettings):
     llm_base_url: str = ""
     # How many chunks we pull from pgvector per question.
     retrieval_top_k: int = 5
+    # Minimum cosine similarity (1 - pgvector distance) for SEMANTIC retrieval.
+    retrieval_min_similarity: float = 0.32
 
     # --- Optional Redis answer cache — app still works if Redis is off/down ---
     redis_url: str = "redis://localhost:6379/0"
     enable_redis_cache: bool = False
     cache_ttl_seconds: int = 3600
+
+    # --- Optional Redis chat rate limit — fail-open if Redis is off/down ---
+    enable_rate_limit: bool = False
+    chat_rate_limit_per_minute: int = 10
 
     # Where uploaded files live on disk: {upload_dir}/{user_id}/{document_id}/
     upload_dir: str = "backend/storage/uploads"

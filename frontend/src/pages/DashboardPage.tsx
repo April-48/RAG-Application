@@ -6,6 +6,7 @@
 import { useMemo, useState } from "react";
 
 import { documentApi } from "../api/documentApi";
+import { ApiError } from "../api/client";
 import DocumentList from "../components/DocumentList";
 import DocumentSearchInput from "../components/DocumentSearchInput";
 import UploadBox from "../components/UploadBox";
@@ -16,6 +17,7 @@ import { matchesDocumentSearch } from "../utils/documentSearch";
 export default function DashboardPage() {
   const { documents, loading, error, refreshDocuments } = useDocuments();
   const [search, setSearch] = useState("");
+  const [deleteError, setDeleteError] = useState<string | null>(null);
 
   const filteredDocuments = useMemo(
     () => documents.filter((doc) => matchesDocumentSearch(doc, search)),
@@ -31,8 +33,13 @@ export default function DashboardPage() {
 
   /** Delete a document and refresh the list. */
   const handleDelete = async (id: string) => {
+    setDeleteError(null);
     try {
       await documentApi.remove(id);
+    } catch (err) {
+      setDeleteError(
+        err instanceof ApiError ? err.message : "Failed to delete document",
+      );
     } finally {
       void refreshDocuments();
     }
@@ -48,6 +55,12 @@ export default function DashboardPage() {
       </header>
 
       <UploadBox onUploaded={handleUploaded} />
+
+      {deleteError && (
+        <p className="rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-700">
+          {deleteError}
+        </p>
+      )}
 
       <div className="glass-panel p-5">
         {loading ? (
