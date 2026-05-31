@@ -19,9 +19,19 @@ Things I check before a demo or submission video.
 - [ ] Upload PDF or TXT
 - [ ] Status reaches `ready`
 - [ ] Ask a question → streaming answer + sources
+- [ ] While answering: input and Send disabled, “AI is answering. Please wait…” shown, typing indicator visible
+- [ ] While answering: document list in sidebar is locked (cannot switch docs)
 - [ ] Try a content question (main idea, limitations, summarize)
 - [ ] Refresh page → history still there
 - [ ] Clear chat history → messages gone
+
+## Upload validation (optional but good to mention)
+
+- [ ] Upload a valid PDF/TXT/DOCX → accepted
+- [ ] Rename a non-document file to `.pdf` and upload → **400** (content mismatch)
+- [ ] Upload over size limit → **413** (default 20 MB)
+
+See [troubleshooting.md](troubleshooting.md) if uploads fail unexpectedly.
 
 ## Nice to show (optional)
 

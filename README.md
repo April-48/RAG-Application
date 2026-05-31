@@ -7,13 +7,13 @@ It runs locally with Docker Compose. It is an MVP, not a production app — but 
 ## Features
 
 - Sign up and log in with JWT
-- Upload PDF, TXT, and DOCX files
+- Upload PDF, TXT, and DOCX files (extension whitelist, size limit, basic content checks, filename sanitization — not malware scanning)
 - Background ingestion with status tracking (`uploaded` → `processing` → `ready` / `failed`)
 - Text chunking, embeddings, and **hybrid RAG retrieval** (rule-based query router + pgvector search)
 - Grounded answers with source snippets; synthesis across retrieved chunks when helpful
 - Clear chat history (messages + Redis answer cache for that document)
 - Single-document chat with source snippets
-- Streaming chat answers over SSE
+- Streaming chat answers over SSE (one active stream per browser session — input and document switching lock while the assistant is answering)
 - Optional Redis answer cache for repeat questions (app still works if Redis is down)
 - Optional Redis chat rate limit on ask routes (10/min per user; also fail-open)
 - Owner-only document access — users cannot read each other's files
@@ -104,10 +104,11 @@ Set `OPENAI_API_KEY` (or `LLM_BASE_URL`) before testing chat.
 2. Upload a **text-based** PDF, TXT, or DOCX (scanned PDFs need OCR — not built yet).
 3. Wait until status is `ready`.
 4. Open Chat and select the document.
-5. Ask a content question the document can answer (e.g. main idea, key points, limitations). Show streaming response and sources.
+5. Ask a content question the document can answer (e.g. main idea, key points, limitations). Show streaming response and sources. While the answer streams, the input is disabled and the sidebar shows “AI is answering. Please wait…”
 6. With Redis running, ask the **same question twice** to show cache hit (see checklist).
 7. Optional: **Clear chat history** and confirm messages disappear.
 8. Optional: sign up as a second user and confirm that the first user's document returns **404** — not 403, not the document.
+9. Optional: try uploading a renamed `.exe` as `.pdf` — should be rejected before ingestion (see [troubleshooting](docs/engineering-notes/troubleshooting.md)).
 
 ## Engineering Docs
 
@@ -159,6 +160,7 @@ Tests do not call real LLM or embedding APIs — everything external is mocked. 
 This is an MVP, not a production RAG platform.
 
 - One selected document per chat session
+- One active streaming answer per browser session (no concurrent multi-chat streaming yet)
 - Ingestion uses FastAPI `BackgroundTasks`, not a real job queue
 - Local disk storage does not work well with multiple API servers
 - Scanned/image-only PDFs need OCR (not implemented)
